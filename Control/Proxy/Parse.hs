@@ -69,8 +69,7 @@ instance (Monad m, P.Interact p, Monoid s) => MonadPlus (ParseT p s m) where
     mplus = (<|>)
 
 parseError :: (Monad m, P.Interact p) => String -> ParseT p s m r
-parseError str = ParseT (StateT (\_ -> EitherT (P.RespondT (P.runIdentityP (do
-    P.respond (Left str) )))))
+parseError str = ParseT (StateT (\_ -> EitherT (return (Left str))))
 
 parseDebug :: (Monad m, P.Interact p, Monoid s) => String -> ParseT p s m ()
 parseDebug str = parseError str <|> pure ()
