@@ -1,15 +1,24 @@
+{-| This module defines the core machinery for both backtracking and
+    non-backtracking parsers.
+-}
+
 {-# LANGUAGE KindSignatures #-}
 
 module Control.Proxy.Parse (
     -- * Backtracking parsers
     ParseT(..),
-    parseError,
+
+    -- ** Diagnostic messages
     parseDebug,
+    parseError,
+
+    -- ** Run functions
     runParseT,
     debugParseT,
 
     -- * Non-backtracking parsers
     commit,
+    -- ** Run functions
     runParse,
     evalParse,
     runParseK,
@@ -28,13 +37,13 @@ import Control.Proxy.Trans.State (
     StateP(StateP), runStateP, evalStateP, runStateK, evalStateK )
 import Data.Monoid (Monoid(mempty), (<>))
 
-{- Use 'ParseT' to:
+{-| Use 'ParseT' to:
 
     * parse input incrementally,
 
     * backtrack on failure,
 
-    * return /all/ parsing solutions,
+    * return all parsing solutions,
 
     * interleave side effects with parsing, and
 
@@ -76,13 +85,15 @@ instance (Monad m, P.Interact p, Monoid s) => MonadPlus (ParseT p s i m) where
     mzero = empty
     mplus = (<|>)
 
--- | Emit a diagnostic message and abort parsing
-parseError :: (Monad m, P.Interact p) => String -> ParseT p s i m r
-parseError str = ParseT (StateT (\_ -> ErrorT (return (Left str))))
-
 -- | Emit a diagnostic message and continue parsing
 parseDebug :: (Monad m, P.Interact p, Monoid s) => String -> ParseT p s i m ()
 parseDebug str = parseError str <|> pure ()
+
+{-| Emit a diagnostic message and abort parsing
+
+    Equivalent to @parseDebug str >> empty@, but faster -}
+parseError :: (Monad m, P.Interact p) => String -> ParseT p s i m r
+parseError str = ParseT (StateT (\_ -> ErrorT (return (Left str))))
 
 {-| Convert a backtracking parser to a 'Pipe' that incrementally consumes input
     and streams valid parse results -}
