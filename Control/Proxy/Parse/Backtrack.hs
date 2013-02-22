@@ -8,23 +8,26 @@ module Control.Proxy.Parse.Backtrack (
     -- * Backtracking parsers
     ParseT(..),
 
-    -- * Parsing primitives
+    -- * High-efficiency primitives
     draw,
     skip,
     drawN,
     skipN,
+    drawIf,
+    skipIf,
     drawWhile,
     skipWhile,
     drawAll,
     skipAll,
-    drawIf,
-    skipIf,
-    endOfInput,
-    protect,
 
     -- * Pushback primitives
     unDraw,
     peek,
+
+    -- * End of input
+    endOfInput,
+    protect,
+    nextInput,
 
     -- ** Diagnostic messages
     parseDebug,
@@ -90,18 +93,45 @@ import Control.Monad (replicateM_, msum, mfilter, guard)
 -}
 newtype ParseT (p :: * -> * -> * -> * -> (* -> *) -> * -> *) a m r =
     ParseT { unParseT ::
-        StateT (S.Seq (Maybe a)) (
-        ErrorT String            (
-        P.RespondT p () (Maybe a) (S.Seq (Maybe a))
+        StateT (S.Seq (Maybe a)) (                   -- Leftovers
+        ErrorT String            (                   -- Diagnostic messages
+        P.RespondT p () (Maybe a) (S.Seq (Maybe a))  -- Generalized ListT 
         m ) ) r }
+{- To understand the ParseT type, begin from a Hutton-Meijer parser:
 
+> StateT leftovers [] r
+
+   Now replace the list monad with "ListT" (i.e. ProduceT) so that you now have
+   a monad transformer:
+
+> StateT leftovers (ProduceT m) r
+
+   Now generalize 'ProduceT' to 'RespondT', for two reasons:
+
+   * Allow requests for more 'input'
+
+   * Return 'drawn' input so that backtracking can reuse it
+
+> StateT leftovers (RespondT p () input drawn m) r
+
+   Now add 'ErrorT' for errors:
+
+> StateT leftovers (ErrorT String (RespondT p () input drawn m)) r
+-}
+{- NOTE: My very informal benchmarks show that 'Seq' outperforms both lists and
+         difference lists as the internal buffer type.  In every case 'Seq' gave
+         the best performance or was tied for best performance. -}
+
+-- Deriving Functor
 instance (Monad m, P.Interact p) => Functor (ParseT p a m) where
     fmap f p = ParseT (fmap f (unParseT p))
 
+-- Deriving Applicative
 instance (Monad m, P.Interact p) => Applicative (ParseT p a m) where
     pure r  = ParseT (pure r)
     f <*> x = ParseT (unParseT f <*> unParseT x)
 
+-- Deriving Monad
 instance (Monad m, P.Interact p) => Monad (ParseT p a m) where
     return r = ParseT (return r)
     m >>= f  = ParseT (unParseT m >>= \r -> unParseT (f r))
@@ -109,6 +139,7 @@ instance (Monad m, P.Interact p) => Monad (ParseT p a m) where
 instance (P.Interact p) => MonadTrans (ParseT p i) where
     lift m = ParseT (lift (lift (lift m)))
 
+-- NOT deriving Alternative
 instance (Monad m, P.Interact p) => Alternative (ParseT p a m) where
     empty = ParseT (StateT (\_ -> ErrorT (P.RespondT (
         P.runIdentityP (return mempty) ))))
@@ -119,6 +150,23 @@ instance (Monad m, P.Interact p) => Alternative (ParseT p a m) where
             draw2 <- P.IdentityP (P.runRespondT (runErrorT (
                 runStateT (unParseT p2) (s <> draw1) )))
             return (draw1 <> draw2) ) ))))
+{- Backtracking reuses drawn input from the first branch so that the second
+   branch begins from the correct leftover state.  If you omit all the newtypes,
+   the above code is just:
+
+   empty = \_ -> return mempty
+
+   p1 <|> p2 = \s -> do
+       draw1 <- p1  s
+       draw2 <- p2 (s <> draw)
+       return (draw1 <> draw2)
+
+   ... and it's simple to show that these form the required monoid:
+
+   p <|> empty = p
+   empty <|> p = p
+   (p1 <|> p2) <|> p3 = p1 <|> (p2 <|> p3)
+-}
 
 instance (Monad m, P.Interact p) => MonadPlus (ParseT p a m) where
     mzero = empty
@@ -195,6 +243,32 @@ skipN n0 = ParseT (StateT (\s0 -> ErrorT (P.RespondT (
         _  -> P.respond (Right ((), S.empty))
     err nLeft = P.respond (Left (
         "skipN " ++ show n0 ++ ": Found " ++ show (n0 - nLeft) ++ " elements"))
+
+-- | Request a single element satisfying a predicate
+drawIf :: (Monad m, P.Interact p) => (a -> Bool) -> ParseT p a m a
+drawIf pred = ParseT (StateT (\s -> ErrorT (P.RespondT (
+    P.runIdentityP (case S.viewl s of
+        S.EmptyL -> do
+            ma <- P.request ()
+            fmap (ma <|) (P.respond (case ma of
+                Nothing -> Left "drawIf: End of input"
+                Just a  ->
+                    if (pred a)
+                        then Right (a, S.empty)
+                        else Left "drawIf: Failed predicate" )) ) ))))
+
+-- | Skip a single element satisfying a predicate
+skipIf :: (Monad m, P.Interact p) => (a -> Bool) -> ParseT p a m ()
+skipIf pred = ParseT (StateT (\s -> ErrorT (P.RespondT (
+    P.runIdentityP (case S.viewl s of
+        S.EmptyL -> do
+            ma <- P.request ()
+            fmap (ma <|) (P.respond (case ma of
+                Nothing -> Left "skipIf: End of input"
+                Just a  ->
+                    if (pred a)
+                        then Right ((), S.empty)
+                        else Left "skipIf: Failed predicate" )) ) ))))
 
 -- | Request as many consecutive elements satisfying a predicate as possible
 drawWhile :: (Monad m, P.Interact p) => (a -> Bool) -> ParseT p a m (S.Seq a)
@@ -276,52 +350,6 @@ skipAll = ParseT (StateT (\s0 -> ErrorT (P.RespondT (
             Nothing -> P.respond (Right ((), S.singleton ma))
             Just _  -> go1 )
 
--- | Request a single element satisfying a predicate
-drawIf :: (Monad m, P.Interact p) => (a -> Bool) -> ParseT p a m a
-drawIf pred = ParseT (StateT (\s -> ErrorT (P.RespondT (
-    P.runIdentityP (case S.viewl s of
-        S.EmptyL -> do
-            ma <- P.request ()
-            fmap (ma <|) (P.respond (case ma of
-                Nothing -> Left "drawIf: End of input"
-                Just a  ->
-                    if (pred a)
-                        then Right (a, S.empty)
-                        else Left "drawIf: Failed predicate" )) ) ))))
-
--- | Skip a single element satisfying a predicate
-skipIf :: (Monad m, P.Interact p) => (a -> Bool) -> ParseT p a m ()
-skipIf pred = ParseT (StateT (\s -> ErrorT (P.RespondT (
-    P.runIdentityP (case S.viewl s of
-        S.EmptyL -> do
-            ma <- P.request ()
-            fmap (ma <|) (P.respond (case ma of
-                Nothing -> Left "skipIf: End of input"
-                Just a  ->
-                    if (pred a)
-                        then Right ((), S.empty)
-                        else Left "skipIf: Failed predicate" )) ) ))))
-
--- | Match end of input without consuming it
-endOfInput :: (Monad m, P.Interact p) => ParseT p a m ()
-endOfInput = ParseT (StateT (\s -> ErrorT (P.RespondT (
-    P.runIdentityP (case S.viewl s of
-        S.EmptyL -> do
-            ma <- P.request ()
-            fmap (ma <|) (P.respond (case ma of
-                Nothing -> Right ((), S.singleton ma)
-                Just a  -> Left "eof: Not end of input" ))
-        ma:<mas  -> P.respond (case ma of
-            Nothing -> Right ((), s)
-            Just a  -> Left "eof: Not end of input" ) ) ))))
-
-{-| Protect a parser from failing on end of input by returning 'Nothing' instead
-
-> protect p = (Just <$> p) <|> (Nothing <$ endOfInput)
--}
-protect :: (Monad m, P.Interact p) => ParseT p a m r -> ParseT p a m (Maybe r)
-protect p = (fmap Just p) <|> (fmap (\_ -> Nothing) endOfInput)
-
 -- | Push back a single element into the leftover buffer
 unDraw :: (Monad m, P.Interact p) => a -> ParseT p a m ()
 unDraw a = ParseT (StateT (\s -> ErrorT (P.RespondT (
@@ -341,6 +369,42 @@ peek = ParseT (StateT (\s -> ErrorT (P.RespondT (
         ma:<mas  -> P.respond (case ma of
             Nothing -> Left "peek: End of input"
             Just a  -> Right (a, s) ) ) ))))
+
+-- | Match end of input without consuming it
+endOfInput :: (Monad m, P.Interact p) => ParseT p a m ()
+endOfInput = ParseT (StateT (\s -> ErrorT (P.RespondT (
+    P.runIdentityP (case S.viewl s of
+        S.EmptyL -> do
+            ma <- P.request ()
+            fmap (ma <|) (P.respond (case ma of
+                Nothing -> Right ((), S.singleton ma)
+                Just a  -> Left "endOfInput: Not end of input" ))
+        ma:<mas  -> P.respond (case ma of
+            Nothing -> Right ((), s)
+            Just a  -> Left "endOfInput: Not end of input" ) ) ))))
+
+{-| Protect a parser from failing on end of input by returning 'Nothing' instead
+
+> protect p = (Just <$> p) <|> (Nothing <$ endOfInput)
+-}
+protect :: (Monad m, P.Interact p) => ParseT p a m r -> ParseT p a m (Maybe r)
+protect p = (fmap Just p) <|> (fmap (\_ -> Nothing) endOfInput)
+
+{-| Consume the end of input token, advancing to the next input
+
+    This is the only primitive that consumes the end of input token.
+-}
+nextInput :: (Monad m, P.Interact p) => ParseT p a m ()
+nextInput = ParseT (StateT (\s -> ErrorT (P.RespondT (
+    P.runIdentityP (case S.viewl s of
+        S.EmptyL -> do
+            ma <- P.request ()
+            fmap (ma <|) (P.respond (case ma of
+                Nothing -> Right ((), S.empty)
+                Just a  -> Left "nextInput: Not end of input" ))
+        ma:<mas  -> P.respond (case ma of
+            Nothing -> Right ((), mas)
+            Just a  -> Left "nextInput: Not end of input" ) ) ))))
 
 -- | Emit a diagnostic message and continue parsing
 parseDebug :: (Monad m, P.Interact p) => String -> ParseT p a m ()
