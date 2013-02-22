@@ -46,28 +46,14 @@ module Control.Proxy.Parse.Backtrack (
 -}
 
     -- * Re-exports
-    (<$>),
-    (<$),
-    Applicative(pure, (<*>), (*>), (<*)),
-    (<**>),
-    optional,
+    -- $reexport
+    module Control.Applicative,
+    module Control.Monad,
     S.replicateA,
-    Alternative(empty, (<|>), some, many),
-    replicateM_,
-    MonadPlus(mzero, mplus),
-    msum,
-    mfilter,
-    guard,
 
     -- * Generic combinators
     few,
     anything,
- 
-    -- ** Run functions
-    runParse,
-    evalParse,
-    runParseK,
-    evalParseK
     ) where
 
 import Control.Applicative (
@@ -463,6 +449,12 @@ commit p () = StateP $ \s ->
             Right rs -> return rs
 -}
 
+{- $reexport
+    These re-exports provide many useful generic functions that work for
+    'ParseT', particularly the 'Alternative' and 'MonadPlus' functions like
+    ('<|>'), 'many', and 'msum'.
+-}
+
 -- | Like 'many', but orders results from fewest to most matches
 few :: (Alternative f) => f a -> f [a]
 few fa = go where
@@ -472,28 +464,3 @@ few fa = go where
 anything :: (Alternative f) => f a -> f [a]
 anything fa = ((:) <$> fa <*> go) where
     go = pure [] <|> (fmap (:) fa <*> go)
-
-{-| Initiate a non-backtracking parser with an empty input, returning the result
-    and unconsumed input -}
-runParse :: (Monoid s) => StateP s p a' a b' b m r -> p a' a b' b m (r, s)
-runParse = runStateP mempty
-
-{-| Initiate a non-backtracking parser with an empty input, returning only the
-    result -}
-evalParse
- :: (Monad m, P.Proxy p, Monoid s)
- => StateP s p a' a b' b m r -> p a' a b' b m r
-evalParse = evalStateP mempty
-
-{-| Initiate a non-backtracking parser \'@K@\'leisli arrow with an empty input,
-    returning the result and unconsumed input -}
-runParseK
- :: (Monoid s) => (q -> StateP s p a' a b' b m r) -> (q -> p a' a b' b m (r, s))
-runParseK = runStateK mempty
-
-{-| Initiate a non-backtracking parser \'@K@\'leisli arrow with an empty input,
-    returning only the result -}
-evalParseK
- :: (Monad m, P.Proxy p, Monoid s)
- => (q -> StateP s p a' a b' b m r) -> (q -> p a' a b' b m r)
-evalParseK = evalStateK mempty
