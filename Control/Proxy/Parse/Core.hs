@@ -20,9 +20,11 @@ module Control.Proxy.Parse.Core (
     drawIf,
     skipIf,
     endOfInput,
+    protect,
 
     -- * Pushback primitives
     unDraw,
+    peek,
 
     -- ** Diagnostic messages
     parseDebug,
@@ -68,7 +70,7 @@ import Data.Sequence (ViewL((:<)), (<|), (|>))
 
     * parse input incrementally,
 
-    * backtrack on failure,
+    * backtrack unlimitedly on failure,
 
     * return all parsing solutions,
 
@@ -303,10 +305,32 @@ endOfInput = ParseT (StateT (\s -> ErrorT (P.RespondT (
             Nothing -> Right ((), s)
             Just a  -> Left "eof: Not end of input" ) ) ))))
 
+{-| Protect a parser from failing on end of input by returning 'Nothing' instead
+
+> protect p = (Just <$> p) <|> (Nothing <$ endOfInput)
+-}
+protect :: (Monad m, P.Interact p) => ParseT p a m r -> ParseT p a m (Maybe r)
+protect p = (fmap Just p) <|> (fmap (\_ -> Nothing) endOfInput)
+
 -- | Push back a single element into the leftover buffer
 unDraw :: (Monad m, P.Interact p) => a -> ParseT p a m ()
 unDraw a = ParseT (StateT (\s -> ErrorT (P.RespondT (
     P.respond (Right ((), Just a <| s)) ))))
+
+{-| Look ahead one element without consuming it
+
+    Faster than 'draw' followed by 'unDraw' -}
+peek :: (Monad m, P.Interact p) => ParseT p a m a
+peek = ParseT (StateT (\s -> ErrorT (P.RespondT (
+    P.runIdentityP (case S.viewl s of
+        S.EmptyL -> do
+            ma <- P.request ()
+            fmap (ma <|) (P.respond (case ma of
+                Nothing -> Left "peek: End of input"
+                Just a  -> Right (a, S.singleton ma) ))
+        ma:<mas  -> P.respond (case ma of
+            Nothing -> Left "peek: End of input"
+            Just a  -> Right (a, s) ) ) ))))
 
 -- | Emit a diagnostic message and continue parsing
 parseDebug :: (Monad m, P.Interact p) => String -> ParseT p a m ()
