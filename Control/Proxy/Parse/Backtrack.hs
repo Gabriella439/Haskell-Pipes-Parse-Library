@@ -4,7 +4,7 @@
 
 {-# LANGUAGE KindSignatures #-}
 
-module Control.Proxy.Parse.Core (
+module Control.Proxy.Parse.Backtrack (
     -- * Backtracking parsers
     ParseT(..),
 
@@ -44,6 +44,25 @@ module Control.Proxy.Parse.Core (
 {-
     commit,
 -}
+
+    -- * Re-exports
+    (<$>),
+    (<$),
+    Applicative(pure, (<*>), (*>), (<*)),
+    (<**>),
+    optional,
+    S.replicateA,
+    Alternative(empty, (<|>), some, many),
+    replicateM_,
+    MonadPlus(mzero, mplus),
+    msum,
+    mfilter,
+    guard,
+
+    -- * Generic combinators
+    few,
+    anything,
+ 
     -- ** Run functions
     runParse,
     evalParse,
@@ -51,7 +70,8 @@ module Control.Proxy.Parse.Core (
     evalParseK
     ) where
 
-import Control.Applicative (Applicative(pure, (<*>)), Alternative(empty, (<|>)))
+import Control.Applicative (
+    Applicative(pure, (<*>), (<*), (*>)), Alternative(empty, (<|>), some, many))
 import Control.Monad (MonadPlus(mzero, mplus))
 import Control.Monad.Trans.Class (MonadTrans(lift))
 import Control.Monad.Trans.State.Strict (StateT(StateT, runStateT))
@@ -65,6 +85,10 @@ import Data.Foldable (toList)
 import Data.Monoid (Monoid(mempty), (<>))
 import qualified Data.Sequence as S
 import Data.Sequence (ViewL((:<)), (<|), (|>))
+
+-- For re-exports
+import Control.Applicative ((<$>), (<$), (<**>), optional)
+import Control.Monad (replicateM_, msum, mfilter, guard)
 
 {-| Use 'ParseT' to:
 
@@ -438,6 +462,16 @@ commit p () = StateP $ \s ->
                 firstSuccess a
             Right rs -> return rs
 -}
+
+-- | Like 'many', but orders results from fewest to most matches
+few :: (Alternative f) => f a -> f [a]
+few fa = go where
+    go = pure [] <|> (fmap (:) fa <*> go)
+
+-- | Like 'some', but orders results from fewest to most matches
+anything :: (Alternative f) => f a -> f [a]
+anything fa = ((:) <$> fa <*> go) where
+    go = pure [] <|> (fmap (:) fa <*> go)
 
 {-| Initiate a non-backtracking parser with an empty input, returning the result
     and unconsumed input -}
