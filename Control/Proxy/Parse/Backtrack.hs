@@ -8,19 +8,21 @@ module Control.Proxy.Parse.Backtrack (
     -- * Backtracking parsers
     ParseT(..),
 
-    -- * High-efficiency primitives
+    -- * Single-element parsers
     draw,
     skip,
-    drawN,
-    skipN,
     drawIf,
     skipIf,
+
+    -- * High-efficiency bulk parsers
+    drawN,
+    skipN,
     drawWhile,
     skipWhile,
     drawAll,
     skipAll,
 
-    -- * Pushback primitives
+    -- * Pushback
     unDraw,
     peek,
 
@@ -29,21 +31,21 @@ module Control.Proxy.Parse.Backtrack (
     protect,
     nextInput,
 
-    -- ** Diagnostic messages
+    -- * Diagnostic messages
     parseDebug,
     parseError,
     silence,
     (<?>),
 
-    -- ** Run functions
+    -- * Run functions
     runParseT,
     debugParseT,
 
-    -- ** End-of-input utilities
+    -- * End-of-input utilities
     only,
     onlyK,
 
-    -- * Non-backtracking parsers
+    -- * Non-backtracking Parsing
 {-
     commit,
 -}
@@ -198,6 +200,32 @@ skip = ParseT (StateT (\s -> ErrorT (P.RespondT (P.runIdentityP (
             Nothing -> Left "skip: End of input"
             Just _  -> Right ((), mas) ) )))))
 
+-- | Request a single element satisfying a predicate
+drawIf :: (Monad m, P.Interact p) => (a -> Bool) -> ParseT p a m a
+drawIf pred = ParseT (StateT (\s -> ErrorT (P.RespondT (
+    P.runIdentityP (case S.viewl s of
+        S.EmptyL -> do
+            ma <- P.request ()
+            fmap (ma <|) (P.respond (case ma of
+                Nothing -> Left "drawIf: End of input"
+                Just a  ->
+                    if (pred a)
+                        then Right (a, S.empty)
+                        else Left "drawIf: Failed predicate" )) ) ))))
+
+-- | Skip a single element satisfying a predicate
+skipIf :: (Monad m, P.Interact p) => (a -> Bool) -> ParseT p a m ()
+skipIf pred = ParseT (StateT (\s -> ErrorT (P.RespondT (
+    P.runIdentityP (case S.viewl s of
+        S.EmptyL -> do
+            ma <- P.request ()
+            fmap (ma <|) (P.respond (case ma of
+                Nothing -> Left "skipIf: End of input"
+                Just a  ->
+                    if (pred a)
+                        then Right ((), S.empty)
+                        else Left "skipIf: Failed predicate" )) ) ))))
+
 -- | Request a fixed number of elements
 drawN :: (Monad m, P.Interact p) => Int -> ParseT p a m (S.Seq a)
 drawN n0 = ParseT (StateT (\s0 -> ErrorT (P.RespondT (
@@ -243,32 +271,6 @@ skipN n0 = ParseT (StateT (\s0 -> ErrorT (P.RespondT (
         _  -> P.respond (Right ((), S.empty))
     err nLeft = P.respond (Left (
         "skipN " ++ show n0 ++ ": Found " ++ show (n0 - nLeft) ++ " elements"))
-
--- | Request a single element satisfying a predicate
-drawIf :: (Monad m, P.Interact p) => (a -> Bool) -> ParseT p a m a
-drawIf pred = ParseT (StateT (\s -> ErrorT (P.RespondT (
-    P.runIdentityP (case S.viewl s of
-        S.EmptyL -> do
-            ma <- P.request ()
-            fmap (ma <|) (P.respond (case ma of
-                Nothing -> Left "drawIf: End of input"
-                Just a  ->
-                    if (pred a)
-                        then Right (a, S.empty)
-                        else Left "drawIf: Failed predicate" )) ) ))))
-
--- | Skip a single element satisfying a predicate
-skipIf :: (Monad m, P.Interact p) => (a -> Bool) -> ParseT p a m ()
-skipIf pred = ParseT (StateT (\s -> ErrorT (P.RespondT (
-    P.runIdentityP (case S.viewl s of
-        S.EmptyL -> do
-            ma <- P.request ()
-            fmap (ma <|) (P.respond (case ma of
-                Nothing -> Left "skipIf: End of input"
-                Just a  ->
-                    if (pred a)
-                        then Right ((), S.empty)
-                        else Left "skipIf: Failed predicate" )) ) ))))
 
 -- | Request as many consecutive elements satisfying a predicate as possible
 drawWhile :: (Monad m, P.Interact p) => (a -> Bool) -> ParseT p a m (S.Seq a)
