@@ -2,7 +2,7 @@
     and provides several additional ones as well.
 
     The 'Alternative' and 'MonadPlus' combinators will only work with
-    backtracking parsers.
+    backtracking parsers.  Non-backtracking parsers do not support alternation.
 -}
 module Control.Proxy.Parse.Combinators (
     -- * Re-exports
@@ -11,15 +11,16 @@ module Control.Proxy.Parse.Combinators (
     Applicative(pure, (<*>), (*>), (<*)),
     (<**>),
     optional,
+    S.replicateA,
     Alternative(empty, (<|>), some, many),
+    replicateM_,
     MonadPlus(mzero, mplus),
     msum,
     mfilter,
     guard,
     -- * Additional combinators
     few,
-    anything,
-    replicateA
+    anything
     ) where
 
 import Control.Applicative (
@@ -29,7 +30,8 @@ import Control.Applicative (
     (<**>),
     optional,
     Alternative(empty, (<|>), some, many) )
-import Control.Monad (MonadPlus(mzero, mplus), msum, mfilter, guard)
+import Control.Monad (
+    replicateM_, MonadPlus(mzero, mplus), msum, mfilter, guard)
 import Data.Foldable (toList)
 import qualified Data.Sequence as S
 
@@ -42,7 +44,3 @@ few fa = go where
 anything :: (Alternative f) => f a -> f [a]
 anything fa = ((:) <$> fa <*> go) where
     go = pure [] <|> (fmap (:) fa <*> go)
-
--- | Like 'replicateM', but faster, and with an 'Applicative' constraint
-replicateA :: (Applicative f) => Int -> f a -> f [a]
-replicateA n fa = fmap toList (S.replicateA n fa)
