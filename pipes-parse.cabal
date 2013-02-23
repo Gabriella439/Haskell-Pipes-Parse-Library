@@ -23,5 +23,6 @@ Library
         pipes        >= 3.2.0   && < 3.3,
         transformers >= 0.2.0.0 && < 0.4
     Exposed-Modules:
-        Control.Proxy.Parse.Backtrack
+        Control.Proxy.Parse.Backtrack,
+        Control.Proxy.Parse.Commit
     Default-Language: Haskell98
