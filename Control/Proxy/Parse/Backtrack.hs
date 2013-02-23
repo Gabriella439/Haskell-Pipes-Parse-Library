@@ -116,7 +116,7 @@ newtype ParseT (p :: * -> * -> * -> * -> (* -> *) -> * -> *) a m r =
 
 > StateT leftovers (RespondT p () input drawn m) r
 
-   Now add 'ErrorT' for errors:
+   Now add 'ErrorT' for error messages:
 
 > StateT leftovers (ErrorT String (RespondT p () input drawn m)) r
 -}
@@ -211,7 +211,13 @@ drawIf pred = ParseT (StateT (\s -> ErrorT (P.RespondT (
                 Just a  ->
                     if (pred a)
                         then Right (a, S.empty)
-                        else Left "drawIf: Failed predicate" )) ) ))))
+                        else Left "drawIf: Failed predicate" ))
+        ma:<mas  -> P.respond (case ma of
+            Nothing -> Left "drawIf: End of input"
+            Just a  ->
+                if (pred a)
+                    then Right (a, mas)
+                    else Left "drawIf: Failed predicate" ) ) ))))
 
 -- | Skip a single element satisfying a predicate
 skipIf :: (Monad m, P.Interact p) => (a -> Bool) -> ParseT p a m ()
@@ -224,7 +230,13 @@ skipIf pred = ParseT (StateT (\s -> ErrorT (P.RespondT (
                 Just a  ->
                     if (pred a)
                         then Right ((), S.empty)
-                        else Left "skipIf: Failed predicate" )) ) ))))
+                        else Left "skipIf: Failed predicate" ))
+        ma:<mas  -> P.respond (case ma of
+            Nothing -> Left "skipIf: End of input"
+            Just a  ->
+                if (pred a)
+                    then Right ((), mas)
+                    else Left "skipIf: Failed predicate" ) ) ))))
 
 -- | Request a fixed number of elements
 drawN :: (Monad m, P.Interact p) => Int -> ParseT p a m (S.Seq a)
