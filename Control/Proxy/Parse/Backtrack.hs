@@ -68,7 +68,7 @@ import Control.Monad.Trans.Class (MonadTrans(lift))
 import Control.Monad.Trans.State.Strict (StateT(StateT, runStateT))
 import Control.Monad.Trans.Error (ErrorT(ErrorT, runErrorT))
 import qualified Control.Proxy as P
-import Control.Proxy ((>>~), (//>))
+import Control.Proxy ((>>~), (//>), (?>=))
 import Control.Proxy.Trans.Maybe (MaybeP, nothing)
 import Control.Proxy.Trans.Codensity (
     CodensityP(CodensityP, unCodensityP), runCodensityP )
@@ -177,6 +177,11 @@ instance (Monad m, P.Interact p) => MonadPlus (ParseT p a m) where
     mzero = empty
     mplus = (<|>)
 
+{- NOTE: Although I define ParseT in terms of a monad transformer stack, I
+   completely bypass using the stack for the high-efficiency primitives and
+   inline the logic.  Unfortunately, this makes the code rather impenetrable to
+   most people other than me, especially the ones that inline CodensityP. -}
+
 -- | Request a single element
 draw :: (Monad m, P.Interact p) => ParseT p a m a
 draw = ParseT (StateT (\s -> ErrorT (P.RespondT (P.runIdentityP (
@@ -242,101 +247,121 @@ skipIf pred = ParseT (StateT (\s -> ErrorT (P.RespondT (
                     else Left "skipIf: Failed predicate" ) ) ))))
 
 -- | Request a fixed number of elements
-drawN :: (Monad m, P.Interact p) => Int -> ParseT p a m (S.Seq a)
-drawN n0 = ParseT (StateT (\s0 -> ErrorT (P.RespondT (
-    P.runIdentityP (go0 S.empty s0 n0) ))))
+drawN :: (Monad m, P.Interact p) => Int -> ParseT p a m [a]
+drawN n0 = ParseT (StateT (\s0 -> ErrorT (P.RespondT (CodensityP (
+    go0 id s0 n0 )))))
   where
-    go0 as s n = case compare n 0 of
-        GT -> case S.viewl s of
-            S.EmptyL -> go1 as n
+    go0 diffAs s n k = if (n > 0)
+        then case S.viewl s of
+            S.EmptyL -> go1 diffAs n k
             ma:<mas  -> case ma of
-                Nothing -> err n
-                Just a  -> go0 (as |> a) mas $! (n - 1)
-        _  -> P.respond (Right (as, s))
-    go1 as n = case compare n 0 of
-        GT -> do
-            ma <- P.request ()
-            fmap (ma <|) (case ma of
-                Nothing -> err n
-                Just a  -> go1 (as |> a) $! (n - 1) )
-        _  -> P.respond (Right (as, S.empty))
-    err nLeft = P.respond (Left (
-        "drawN " ++ show n0 ++ ": Found " ++ show (n0 - nLeft) ++ " elements"))
+                Nothing -> err n k
+                Just a  ->
+                    let n' = n - 1
+                    in  n' `seq` go0 (diffAs . (a:)) mas n' k
+        else P.respond (Right (diffAs [], s)) ?>= k
+    go1 diffAs n k = if (n > 0)
+        then
+            P.request () ?>= \ma ->
+            case ma of
+                Nothing -> err n (\r -> k (ma <| r))
+                Just a  ->
+                    let n' = n - 1
+                    in  n' `seq` go1 (diffAs . (a :)) n' (\r -> k (ma <| r))
+        else P.respond (Right (diffAs [], S.empty)) ?>= k
+    err nLeft k = P.respond (Left (
+        "drawN " ++ show n0 ++ ": Found " ++ show (n0 - nLeft) ++ " elements" ))
+        ?>= k
+{-# INLINABLE drawN #-}
 
 {-| Skip a fixed number of elements
 
     Faster than 'drawN' if you don't need the input -}
 skipN :: (Monad m, P.Interact p) => Int -> ParseT p a m ()
-skipN n0 = ParseT (StateT (\s0 -> ErrorT (P.RespondT (
-    P.runIdentityP (go0 s0 n0) ))))
+skipN n0 = ParseT (StateT (\s0 -> ErrorT (P.RespondT (CodensityP (
+    go0 s0 n0 )))))
   where
-    go0 s n = case compare n 0 of
-        GT -> case S.viewl s of
-            S.EmptyL -> go1 n
+    go0 s n k = if (n > 0)
+        then case S.viewl s of
+            S.EmptyL -> go1 n k
             ma:<mas  -> case ma of
-                Nothing -> err n
-                Just _  -> go0 mas $! (n - 1)
-        _  -> P.respond (Right ((), s))
-    go1 n = case compare n 0 of
-        GT -> do
-            ma <- P.request ()
-            fmap (ma <|) (case ma of
-                Nothing -> err n
-                Just _  -> go1 $! (n - 1) )
-        _  -> P.respond (Right ((), S.empty))
-    err nLeft = P.respond (Left (
+                Nothing -> err n k
+                Just _  ->
+                    let n' = n - 1
+                    in  n' `seq` go0 mas n' k
+        else P.respond (Right ((), s)) ?>= k
+    go1 n k = if (n > 0)
+        then
+            P.request () ?>= \ma ->
+            case ma of
+                Nothing -> err n (\r -> k (ma <| r))
+                Just _  ->
+                    let n' = n - 1
+                    in  n' `seq` go1 n' (\r -> k (ma <| r))
+        else P.respond (Right ((), S.empty)) ?>= k
+    err nLeft k = P.respond (Left (
         "skipN " ++ show n0 ++ ": Found " ++ show (n0 - nLeft) ++ " elements"))
+        ?>= k
+{-# INLINABLE skipN #-}
 
 -- | Request as many consecutive elements satisfying a predicate as possible
-drawWhile :: (Monad m, P.Interact p) => (a -> Bool) -> ParseT p a m (S.Seq a)
-drawWhile pred = ParseT (StateT (\s0 -> ErrorT (P.RespondT (
-    P.runIdentityP (go0 S.empty s0) ))))
+drawWhile :: (Monad m, P.Interact p) => (a -> Bool) -> ParseT p a m [a]
+drawWhile pred = ParseT (StateT (\s0 -> ErrorT (P.RespondT (CodensityP (
+    go0 id s0 )))))
   where
-    go0 as s = case S.viewl s of
-        S.EmptyL -> go1 as
+    go0 diffAs s k = case S.viewl s of
+        S.EmptyL -> go1 diffAs k
         ma:<mas  -> case ma of
-            Nothing -> P.respond (Right (as, s))
+            Nothing -> P.respond (Right (diffAs [], s)) ?>= k
             Just a  ->
                 if (pred a)
-                    then go0 (as |> a) mas
-                    else P.respond (Right (as, s))
-    go1 as = do
-        ma <- P.request ()
-        fmap (ma <|) (case ma of
-            Nothing -> P.respond (Right (as, S.singleton ma))
+                    then go0 (diffAs . (a:)) mas k
+                    else P.respond (Right (diffAs [], s)) ?>= k
+    go1 diffAs k =
+        P.request () ?>= \ma ->
+        case ma of
+            Nothing ->
+                P.respond (Right (diffAs [], S.singleton ma)) ?>= \r ->
+                k (ma <| r)
             Just a  ->
                 if (pred a)
-                    then go1 (as |> a)
-                    else P.respond (Right (as, S.singleton ma)) )
+                    then go1 (diffAs . (a:)) (\r -> k (ma <| r))
+                    else
+                        P.respond (Right (diffAs [], S.singleton ma)) ?>= \r ->
+                        k (ma <| r)
+{-# INLINABLE drawWhile #-}
 
 {-| Skip as many consecutive elements satisfying a predicate as possible
 
     Faster than 'drawWhile' if you don't need the input -}
 skipWhile :: (Monad m, P.Interact p) => (a -> Bool) -> ParseT p a m ()
-skipWhile pred = ParseT (StateT (\s0 -> ErrorT (P.RespondT (
-    P.runIdentityP (go0 s0) ))))
+skipWhile pred = ParseT (StateT (\s0 -> ErrorT (P.RespondT (CodensityP (
+    go0 s0 )))))
   where
-    go0 s = case S.viewl s of
-        S.EmptyL -> go1
+    go0 s k = case S.viewl s of
+        S.EmptyL -> go1 k
         ma:<mas  -> case ma of
-            Nothing -> P.respond (Right ((), s))
+            Nothing -> P.respond (Right ((), s)) ?>= k
             Just a  ->
                 if (pred a)
-                    then go0 mas
-                    else P.respond (Right ((), s))
-    go1 = do
-        ma <- P.request ()
-        fmap (ma <|) (case ma of
-            Nothing -> P.respond (Right ((), S.singleton ma))
+                    then go0 mas k
+                    else P.respond (Right ((), s)) ?>= k
+    go1 k =
+        P.request () ?>= \ma ->
+        case ma of
+            Nothing ->
+                P.respond (Right ((), S.singleton ma)) ?>= \r -> k (ma <| r)
             Just a  ->
                 if (pred a)
-                    then go1
-                    else P.respond (Right ((), S.singleton ma)) )
+                    then go1 k
+                    else
+                        P.respond (Right ((), S.singleton ma)) ?>= \r ->
+                        k (ma <| r)
+{-# INLINABLE skipWhile #-}
 
 -- | Request the rest of the input
 drawAll :: (Monad m, P.Interact p) => ParseT p a m (S.Seq a)
-drawAll = ParseT (StateT (\s0 -> ErrorT (P.RespondT (
-    P.runIdentityP (go0 S.empty s0) ))))
+drawAll = ParseT (StateT (\s0 -> ErrorT (P.RespondT (go0 S.empty s0))))
   where
     go0 as s = case S.viewl s of
         S.EmptyL -> go1 as
@@ -348,24 +373,28 @@ drawAll = ParseT (StateT (\s0 -> ErrorT (P.RespondT (
         fmap (ma <|) (case ma of
             Nothing -> P.respond (Right (as, S.singleton ma))
             Just a  -> go1 (as |> a) )
+{-# INLINABLE drawAll #-}
 
 {-| Skip the rest of the input
 
     Faster than 'drawAll' if you don't need the input -}
 skipAll :: (Monad m, P.Interact p) => ParseT p a m ()
-skipAll = ParseT (StateT (\s0 -> ErrorT (P.RespondT (
-    P.runIdentityP (go0 s0) ))))
+skipAll = ParseT (StateT (\s0 -> ErrorT (P.RespondT (CodensityP (
+    go0 s0 )))))
   where
-    go0 s = case S.viewl s of
-        S.EmptyL -> go1
+    go0 s k = case S.viewl s of
+        S.EmptyL -> go1 k
         ma:<mas  -> case ma of
-            Nothing -> P.respond (Right ((), s))
-            Just _  -> go0 mas
-    go1 = do
-        ma <- P.request ()
-        fmap (ma <|) (case ma of
-            Nothing -> P.respond (Right ((), S.singleton ma))
-            Just _  -> go1 )
+            Nothing -> P.respond (Right ((), s)) ?>= k
+            Just _  -> go0 mas k
+    go1 k =
+        P.request () ?>= \ma ->
+        case ma of
+            Nothing ->
+                P.respond (Right ((), S.singleton ma)) ?>= \r ->
+                k (ma <| r)
+            Just _  -> go1 (\r -> k (ma <| r))
+{-# INLINABLE skipAll #-}
 
 -- | Push back a single element into the leftover buffer
 unDraw :: (Monad m, P.Interact p) => a -> ParseT p a m ()

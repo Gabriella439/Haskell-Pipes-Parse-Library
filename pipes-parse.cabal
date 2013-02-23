@@ -26,3 +26,4 @@ Library
         Control.Proxy.Parse.Backtrack,
         Control.Proxy.Parse.Commit
     Default-Language: Haskell98
+    GHC-Options: -O2
