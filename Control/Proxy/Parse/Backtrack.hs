@@ -70,6 +70,8 @@ import Control.Monad.Trans.Error (ErrorT(ErrorT, runErrorT))
 import qualified Control.Proxy as P
 import Control.Proxy ((>>~), (//>))
 import Control.Proxy.Trans.Maybe (MaybeP, nothing)
+import Control.Proxy.Trans.Codensity (
+    CodensityP(CodensityP, unCodensityP), runCodensityP )
 import Control.Proxy.Trans.State (
     StateP(StateP), runStateP, evalStateP, runStateK, evalStateK )
 import Data.Foldable (toList)
@@ -95,10 +97,10 @@ import Control.Monad (replicateM_, msum, mfilter, guard)
 -}
 newtype ParseT (p :: * -> * -> * -> * -> (* -> *) -> * -> *) a m r =
     ParseT { unParseT ::
-        StateT (S.Seq (Maybe a)) (                   -- Leftovers
-        ErrorT String            (                   -- Diagnostic messages
-        P.RespondT p () (Maybe a) (S.Seq (Maybe a))  -- Generalized ListT 
-        m ) ) r }
+        StateT (S.Seq (Maybe a)) (
+            ErrorT String (
+                P.RespondT (CodensityP p) () (Maybe a) (S.Seq (Maybe a))
+                    m ) ) r }
 {- To understand the ParseT type, begin from a Hutton-Meijer parser:
 
 > StateT leftovers [] r
@@ -119,10 +121,12 @@ newtype ParseT (p :: * -> * -> * -> * -> (* -> *) -> * -> *) a m r =
    Now add 'ErrorT' for error messages:
 
 > StateT leftovers (ErrorT String (RespondT p () input drawn m)) r
+
+   Finally, layer Codensity over the base proxy so that you don't pay a
+   quadratic time complexity for backtracking:
+
+> StateT leftovers (ErrorT String (RespondT (Codensity p) () input drawn m)) r
 -}
-{- NOTE: My very informal benchmarks show that 'Seq' outperforms both lists and
-         difference lists as the internal buffer type.  In every case 'Seq' gave
-         the best performance or was tied for best performance. -}
 
 -- Deriving Functor
 instance (Monad m, P.Interact p) => Functor (ParseT p a m) where
@@ -143,18 +147,17 @@ instance (P.Interact p) => MonadTrans (ParseT p i) where
 
 -- NOT deriving Alternative
 instance (Monad m, P.Interact p) => Alternative (ParseT p a m) where
-    empty = ParseT (StateT (\_ -> ErrorT (P.RespondT (
-        P.runIdentityP (return mempty) ))))
-    p1 <|> p2 = ParseT (StateT (\s -> ErrorT (P.RespondT (
-        P.runIdentityP (do
-            draw1 <- P.IdentityP (P.runRespondT (runErrorT (
-                runStateT (unParseT p1)  s           )))
-            draw2 <- P.IdentityP (P.runRespondT (runErrorT (
-                runStateT (unParseT p2) (s <> draw1) )))
-            return (draw1 <> draw2) ) ))))
+    empty = ParseT (StateT (\_ -> ErrorT (P.RespondT (CodensityP (\k ->
+        k mempty )))))
+    p1 <|> p2 = ParseT (StateT (\s -> ErrorT (P.RespondT (CodensityP (\k ->
+        unCodensityP (P.runRespondT (runErrorT (
+            runStateT (unParseT p1)  s           ))) (\draw1 ->
+        unCodensityP (P.runRespondT (runErrorT (
+            runStateT (unParseT p2) (s <> draw1) ))) (\draw2 ->
+        k (draw1 <> draw2) ) ) )))))
 {- Backtracking reuses drawn input from the first branch so that the second
-   branch begins from the correct leftover state.  If you omit all the newtypes,
-   the above code is just:
+   branch begins from the correct leftover state.  If you omit all the newtypes
+   and don't inline Codensity, the above methods are equivalent to:
 
    empty = \_ -> return mempty
 
@@ -163,7 +166,7 @@ instance (Monad m, P.Interact p) => Alternative (ParseT p a m) where
        draw2 <- p2 (s <> draw)
        return (draw1 <> draw2)
 
-   ... and it's simple to show that these form the required monoid:
+   ... and it's simple to show that these satisfy the Alternative laws:
 
    p <|> empty = p
    empty <|> p = p
@@ -463,8 +466,8 @@ parseError str = ParseT (StateT (\_ -> ErrorT (return (Left str))))
 runParseT
  :: (Monad m, P.Interact p)
  => ParseT p a m r -> () -> P.Pipe p (Maybe a) r m ()
-runParseT p () = P.runIdentityP (do
-    P.IdentityP (P.runRespondT (runErrorT (runStateT (unParseT p) mempty))) //>
+runParseT p () = runCodensityP (do
+    P.runRespondT (runErrorT (runStateT (unParseT p) mempty)) //>
         \x -> do
             case x of
                 Left   _     -> return mempty
@@ -478,8 +481,8 @@ runParseT p () = P.runIdentityP (do
 debugParseT
  :: (Monad m, P.Interact p)
  => ParseT p a m r -> () -> P.Pipe p (Maybe a) (Either String r) m ()
-debugParseT p () = P.runIdentityP (do
-    P.IdentityP (P.runRespondT (runErrorT (runStateT (unParseT p) mempty))) //>
+debugParseT p () = runCodensityP (do
+    P.runRespondT (runErrorT (runStateT (unParseT p) mempty)) //>
         \x -> do
             P.respond (case x of
                 Left   e     -> Left  e
@@ -512,10 +515,9 @@ commit
  :: (Monad m, P.Interact p)
  => ParseT p a m r -> () -> P.Pipe (StateP s (MaybeP p)) (Maybe a) String m r
 commit p () = StateP $ \s ->
-    (do P.liftP (P.runRespondT (runErrorT (runStateT (unParseT p) s)) //> \x ->
-            P.runIdentityP (do
-                P.respond x
-                return mempty ) )
+    (do P.liftP (runCodensityP (P.runRespondT (runErrorT (runStateT (unParseT p) s)) //> \x -> do
+            P.respond x
+            return mempty ) )
         nothing ) >>~ firstSuccess
   where
     firstSuccess a = do
