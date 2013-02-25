@@ -148,8 +148,8 @@ instance (Monad m, P.ListT p) => MonadPlus (ParseT p a m) where
 
     * diagnose parse failures with a stream of informative error messages.
 -}
-newtype ParseP i p a' a b' b m r =
-    ParseP { unParseP :: MaybeP (StateP (S.Seq (Maybe i)) p) a' a b' b m r }
+newtype ParseP i p a' a b' b m r = ParseP { unParseP ::
+    MaybeP (StateP (Seq (Maybe i)) (CodensityP p)) a' a b' b m r }
 
 -- Deriving Functor
 instance (P.Proxy p, Monad m) => Functor (ParseP i p a' a b' b m) where
@@ -184,7 +184,7 @@ instance (Monad m, P.Proxy p) => MonadPlus (ParseP i p a' a b' b m) where
 -- Deriving ProxyInternal
 instance (P.Proxy p) => P.ProxyInternal (ParseP i p) where
     return_P = \r -> ParseP (P.return_P r)
-    m ?>= f = ParseP (unParseP m ?>= \r -> unParseP (f r))
+    m ?>= f  = ParseP (unParseP m ?>= \r -> unParseP (f r))
 
     lift_P m = ParseP (P.lift_P m)
 
@@ -206,10 +206,10 @@ instance (P.Proxy p) => P.MonadPlusP (ParseP i p) where
     mplus_P p1 p2 = ParseP (P.mplus_P (unParseP p1) (unParseP p2))
 
 instance P.ProxyTrans (ParseP i) where
-    liftP p = ParseP (P.liftP (P.liftP p))
+    liftP p = ParseP (P.liftP (P.liftP (P.liftP p)))
 
 instance P.PFunctor (ParseP i) where
-    hoistP nat p = ParseP (P.hoistP (P.hoistP nat) (unParseP p))
+    hoistP nat p = ParseP (P.hoistP (P.hoistP (P.hoistP nat)) (unParseP p))
 
 -- | Wrap a proxy's output in 'Just' and finish with a 'Nothing'
 only :: (Monad m, P.Proxy p) => p a' a b' b m r -> p a' a b' (Maybe b) m r

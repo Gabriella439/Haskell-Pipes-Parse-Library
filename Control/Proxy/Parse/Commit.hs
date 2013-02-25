@@ -57,8 +57,9 @@ import Control.Monad (forever)
 import qualified Control.Proxy as P
 import Control.Proxy ((>>~))
 import Control.Proxy.Parse.Internal (ParseP(ParseP, unParseP), only, onlyK)
-import Control.Proxy.Trans.State (StateP(StateP), runStateP, evalStateP)
-import Control.Proxy.Trans.Maybe (MaybeP(MaybeP, runMaybeP), nothing)
+import Control.Proxy.Trans.Codensity (runCodensityP)
+import Control.Proxy.Trans.State (StateP(StateP), evalStateP)
+import Control.Proxy.Trans.Maybe (MaybeP(MaybeP, runMaybeP))
 import qualified Data.Sequence as S
 import Data.Sequence (ViewL((:<)), (<|))
 
@@ -415,7 +416,8 @@ infixl 0 <?>
     'Nothing' -}
 evalParseP
  :: (Monad m, P.Proxy p) => ParseP i p a' a b' b m r -> MaybeP p a' a b' b m r
-evalParseP p = MaybeP (evalStateP S.empty (runMaybeP (unParseP p)))
+evalParseP p =
+    MaybeP (runCodensityP (evalStateP S.empty (runMaybeP (unParseP p))))
 
 {-| Evaluate a non-backtracking parser \'@K@\'leisli arrow, returning the result
     or failing with 'Nothing' -}

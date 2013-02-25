@@ -427,11 +427,10 @@ commit
  :: (Monad m, P.ListT p)
  => ParseT p a m r -> () -> P.Pipe (ParseP a p) (Maybe a) String m r
 commit p () = ParseP (MaybeP (StateP (\s ->
-    runCodensityP (do
-        P.runRespondT (runErrorT (runStateT (unParseT p) s)) //> \x -> do
+    (do P.runRespondT (runErrorT (runStateT (unParseT p) s)) //> \x -> do
             P.respond x
             return mempty
-        return (Nothing, s) ) >>~ P.runIdentityK firstSuccess )))
+        return (Nothing, s) ) >>~ firstSuccess )))
   where
     firstSuccess a = do
         case a of
