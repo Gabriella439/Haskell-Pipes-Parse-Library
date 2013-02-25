@@ -205,6 +205,7 @@ only p = P.runIdentityP (do
         a' <- P.respond (Just a)
         a2 <- P.request a'
         wrap a2
+{-# INLINABLE only #-}
 
 {-| Wrap a proxy \'@K@\'leisli arrow's output in 'Just' and finish with a
     'Nothing' -}
@@ -212,3 +213,4 @@ onlyK
  :: (Monad m, P.Proxy p)
  => (q -> p a' a b' b m r) -> (q -> p a' a b' (Maybe b) m r)
 onlyK k q = only (k q)
+{-# INLINABLE onlyK #-}
