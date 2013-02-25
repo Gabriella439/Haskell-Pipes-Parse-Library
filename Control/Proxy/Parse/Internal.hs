@@ -1,3 +1,7 @@
+{-| This module exposes internal implementation details that might change in the
+    future.  I only expose this so that people can write high-efficiency parsing
+    primitives not implementable in terms of existing primitives. -}
+
 {-# LANGUAGE KindSignatures #-}
 
 module Control.Proxy.Parse.Internal (
