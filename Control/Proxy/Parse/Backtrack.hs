@@ -66,7 +66,7 @@ import qualified Control.Proxy as P
 import Control.Proxy ((>>~), (//>))
 import Control.Proxy.Parse.Internal (
     ParseT(ParseT, unParseT), ParseP(ParseP), only, onlyK )
-import Control.Proxy.Trans.Maybe (nothing)
+import Control.Proxy.Trans.Maybe (MaybeP(MaybeP))
 import Control.Proxy.Trans.Codensity (runCodensityP)
 import Control.Proxy.Trans.State (StateP(StateP))
 import Data.Monoid (Monoid(mempty))
@@ -75,7 +75,8 @@ import Data.Sequence (ViewL((:<)), (<|))
 
 -- For re-exports
 import Control.Applicative ((<$>), (<$), (<**>), optional)
-import Control.Monad (replicateM_, msum, mfilter, guard)
+import Control.Monad (
+    replicateM_, MonadPlus(mzero, mplus), msum, mfilter, guard )
 
 {- NOTE: Although I define ParseT in terms of a monad transformer stack, I
    completely bypass using the stack and inline the logic for the parsing
@@ -325,7 +326,7 @@ endOfInput = ParseT (StateT (\s -> ErrorT (P.RespondT (
 > protect p = (Just <$> p) <|> (Nothing <$ endOfInput)
 -}
 protect :: (Monad m, P.ListT p) => ParseT p a m r -> ParseT p a m (Maybe r)
-protect p = (fmap Just p) <|> (fmap (\_ -> Nothing) endOfInput)
+protect p = fmap Just p <|> fmap (\_ -> Nothing) endOfInput
 
 {-| Consume the end of input token, advancing to the next input
 
@@ -348,7 +349,10 @@ parseDebug :: (Monad m, P.ListT p) => String -> ParseT p a m ()
 parseDebug str = parseError str <|> pure ()
 
 -- | Silence all diagnostic messages emitted from the given parser
-silence :: (Monad m, P.ListT p) => ParseT p a m r -> ParseT p a m r
+silence
+ :: (Monad m, P.ListT p)
+ => ParseT p a m r  -- ^ Parser to silence
+ -> ParseT p a m r
 silence p = ParseT (StateT (\s -> ErrorT (P.RespondT (
     P.runRespondT (runErrorT (runStateT (unParseT p) s)) //> noLefts ))))
   where
@@ -366,16 +370,22 @@ silence p = ParseT (StateT (\s -> ErrorT (P.RespondT (
 > ...
 > Leave: My Parser
 
-    ('<?>') only emits the latter message if the parser succeeds
+    ('<?>') only emits the latter message if the parser succeeds.
 
     Note that the parser's result will appear after the second error message.
 -}
-(<?>) :: (Monad m, P.ListT p) => ParseT p a m r -> String -> ParseT p a m r
+(<?>)
+ :: (Monad m, P.ListT p)
+ => ParseT p a m r  -- ^ Parser to diagnose
+ -> String          -- ^ Descriptive label
+ -> ParseT p a m r
 p <?> str = do
     parseDebug ("Enter: " ++ str)
     r <- p
     parseDebug ("Leave: " ++ str)
     return r
+
+infixl 0 <?>
 
 -- | Emit a diagnostic message and abort parsing
 parseError :: (Monad m, P.ListT p) => String -> ParseT p a m r
@@ -409,15 +419,19 @@ debugParseT p () = runCodensityP (do
             return mempty
     return () )
 
--- | Convert a backtracking parser to a non-backtracking parser
+{-| Convert a backtracking parser to a non-backtracking parser
+
+    Rewinds to starting point if the backtracking parser fails
+-}
 commit
  :: (Monad m, P.ListT p)
  => ParseT p a m r -> () -> P.Pipe (ParseP a p) (Maybe a) String m r
-commit p () = ParseP (StateP (\s ->
-    (do P.liftP (runCodensityP (P.runRespondT (runErrorT (runStateT (unParseT p) s)) //> \x -> do
+commit p () = ParseP (MaybeP (StateP (\s ->
+    runCodensityP (do
+        P.runRespondT (runErrorT (runStateT (unParseT p) s)) //> \x -> do
             P.respond x
-            return mempty ) )
-        nothing ) >>~ firstSuccess ))
+            return mempty
+        return (Nothing, s) ) >>~ P.runIdentityK firstSuccess )))
   where
     firstSuccess a = do
         case a of
@@ -425,13 +439,11 @@ commit p () = ParseP (StateP (\s ->
                 b' <- P.respond b
                 a2 <- P.request b'
                 firstSuccess a
-            Right rs -> return rs
+            Right (r, s) -> return (Just r, s)
 
 {- $reexport
-    These re-exports provide many useful generic functions that work for
-    'ParseT', particularly the 'Alternative' and 'MonadPlus' functions like
-    ('<|>'), 'many', and 'msum'.
--}
+    These modules re-export useful combinators for 'Functor', 'Applicative',
+    'Monad', 'Alternative', and 'MonadPlus' for use with parsers. -}
 
 -- | Like 'many', but orders results from fewest to most matches
 few :: (Alternative f) => f a -> f [a]
