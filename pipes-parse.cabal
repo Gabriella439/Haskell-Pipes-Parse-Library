@@ -24,6 +24,6 @@ Library
         transformers >= 0.2.0.0 && < 0.4
     Exposed-Modules:
         Control.Proxy.Parse.Backtrack,
-        Control.Proxy.Parse.Commit
+        Control.Proxy.Parse.Commit,
+        Control.Proxy.Parse.Internal
     Default-Language: Haskell98
-    GHC-Options: -O2
