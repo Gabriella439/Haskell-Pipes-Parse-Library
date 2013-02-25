@@ -121,7 +121,7 @@ skip = ParseT (StateT (\s -> ErrorT (P.RespondT (
             Nothing -> Left "skip: End of input"
             Just _  -> Right ((), mas) ) ))))
 
--- | Request a single element satisfying a predicate
+-- | Request a single element that must satisfy the predicate
 drawIf :: (Monad m, P.ListT p) => (a -> Bool) -> ParseT p a m a
 drawIf pred = ParseT (StateT (\s -> ErrorT (P.RespondT (
     case S.viewl s of
@@ -140,7 +140,7 @@ drawIf pred = ParseT (StateT (\s -> ErrorT (P.RespondT (
                     then Right (a, mas)
                     else Left "drawIf: Element failed predicate" ) ))))
 
--- | Skip a single element satisfying a predicate
+-- | Skip a single element that must satisfy the predicate
 skipIf :: (Monad m, P.ListT p) => (a -> Bool) -> ParseT p a m ()
 skipIf pred = ParseT (StateT (\s -> ErrorT (P.RespondT (
     case S.viewl s of
