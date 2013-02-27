@@ -76,7 +76,7 @@ import Data.Sequence (ViewL((:<)), (<|))
 -- For re-exports
 import Control.Applicative ((<$>), (<$), (<**>), optional)
 import Control.Monad (
-    replicateM_, MonadPlus(mzero, mplus), msum, mfilter, guard )
+    replicateM, replicateM_, MonadPlus(mzero, mplus), msum, mfilter, guard )
 
 {- NOTE: Although I define ParseT in terms of a monad transformer stack, I
    completely bypass using the stack and inline the logic for the parsing
@@ -441,8 +441,11 @@ commit p () = ParseP (MaybeP (StateP (\s ->
             Right (r, s) -> return (Just r, s)
 
 {- $reexport
-    These modules re-export useful combinators for 'Functor', 'Applicative',
-    'Monad', 'Alternative', and 'MonadPlus' for use with parsers. -}
+    @Control.Applicative@ exports useful combinators for 'Functor',
+    'Applicative', and 'Alternative', like 'many', ('<|>'), and 'optional'.
+
+    @Control.Monad@' exports useful combinators for 'Monad' and 'MonadPlus',
+    like 'replicateM', 'msum', and 'mfilter'. -}
 
 -- | Like 'many', but orders results from fewest to most matches
 few :: (Alternative f) => f a -> f [a]

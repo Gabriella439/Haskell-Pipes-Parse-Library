@@ -48,7 +48,8 @@ module Control.Proxy.Parse.Commit (
     -- * Re-exports
     -- $reexport
     module Control.Applicative,
-    module Control.Monad
+    module Control.Monad,
+    module Control.Proxy.Trans.Maybe
     ) where
 
 import Control.Applicative (
@@ -59,7 +60,7 @@ import Control.Proxy ((>>~))
 import Control.Proxy.Parse.Internal (ParseP(ParseP, unParseP), only, onlyK)
 import Control.Proxy.Trans.Codensity (runCodensityP)
 import Control.Proxy.Trans.State (StateP(StateP), evalStateP)
-import Control.Proxy.Trans.Maybe (MaybeP(MaybeP, runMaybeP))
+import Control.Proxy.Trans.Maybe (MaybeP(MaybeP, runMaybeP), runMaybeK)
 import qualified Data.Sequence as S
 import Data.Sequence (ViewL((:<)), (<|))
 
@@ -427,5 +428,11 @@ evalParseK
 evalParseK k q = evalParseP (k q)
 
 {- $reexport
-    These modules re-export useful combinators for 'Functor', 'Applicative',
-    'Monad', 'Alternative', and 'MonadPlus' for use with parsers. -}
+    @Control.Applicative@ exports useful combinators for 'Functor',
+    'Applicative', and 'Alternative', like 'many', ('<|>'), and 'optional'.
+
+    @Control.Monad@' exports useful combinators for 'Monad' and 'MonadPlus',
+    like 'replicateM', 'msum', and 'mfilter'.
+
+    @Control.Monad.Trans.Maybe@ exports run functions for the 'MaybeP' proxy
+    transformer. -}
