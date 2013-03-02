@@ -298,8 +298,12 @@ drawMay = ParseT (StateT (\s -> P.RespondT (
     case S.viewl s of
         S.EmptyL -> do
             ma <- P.request ()
-            fmap (ma <|) (P.respond (ma, s))
-        ma:<mas  -> P.respond (ma, mas) )))
+            fmap (ma <|) (P.respond (ma, case ma of
+                Nothing -> S.singleton ma
+                _       -> s ))
+        ma:<mas  -> P.respond (ma, case ma of
+            Nothing -> s
+            _       -> mas ) )))
 {-# INLINABLE drawMay #-}
 
 {-| Look ahead one element without consuming it
@@ -365,8 +369,8 @@ nextInput = ParseT (StateT (\s -> P.RespondT (
     Rewinds to starting point if the backtracking parser fails
 -}
 commit
- :: (Monad m, P.ListT p)
- => String -> ParseT p a m r -> P.Consumer (ParseP a p) (Maybe a) m r
+    :: (Monad m, P.ListT p)
+    => String -> ParseT p a m r -> P.Consumer (ParseP a p) (Maybe a) m r
 commit str p = ParseP (StateP (\s -> EitherP (
     (do P.runRespondT (runStateT (unParseT p) s) //> \rs -> do
             P.respond rs
@@ -378,7 +382,7 @@ commit str p = ParseP (StateP (\s -> EitherP (
     and streams valid parse results
 -}
 evalParseT
- :: (Monad m, P.ListT p) => ParseT p a m r -> () -> P.Pipe p (Maybe a) r m ()
+    :: (Monad m, P.ListT p) => ParseT p a m r -> () -> P.Pipe p (Maybe a) r m ()
 evalParseT p () = runCodensityP (do
     P.runRespondT (runStateT (unParseT p) S.empty) //> \(r, _) -> do
         P.respond r

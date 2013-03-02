@@ -110,8 +110,8 @@ skip = ParseP (StateP (\s -> E.EitherP (case S.viewl s of
 
 -- | Request a single element that must satisfy the predicate
 drawIf
- :: (Monad m, P.Proxy p)
- => (a -> Bool) -> P.Consumer (ParseP a p) (Maybe a) m a
+    :: (Monad m, P.Proxy p)
+    => (a -> Bool) -> P.Consumer (ParseP a p) (Maybe a) m a
 drawIf pred = ParseP (StateP (\s -> E.EitherP (case S.viewl s of
     S.EmptyL -> do
         ma <- P.request ()
@@ -131,8 +131,8 @@ drawIf pred = ParseP (StateP (\s -> E.EitherP (case S.viewl s of
 
 -- | Skip a single element that must satisfy the predicate
 skipIf
- :: (Monad m, P.Proxy p)
- => (a -> Bool) -> P.Consumer (ParseP a p) (Maybe a) m ()
+    :: (Monad m, P.Proxy p)
+    => (a -> Bool) -> P.Consumer (ParseP a p) (Maybe a) m ()
 skipIf pred = ParseP (StateP (\s -> E.EitherP (case S.viewl s of
     S.EmptyL -> do
         ma <- P.request ()
@@ -152,7 +152,7 @@ skipIf pred = ParseP (StateP (\s -> E.EitherP (case S.viewl s of
 
 -- | Request a fixed number of elements
 drawN
- :: (Monad m, P.Proxy p) => Int -> P.Consumer (ParseP a p) (Maybe a) m [a]
+    :: (Monad m, P.Proxy p) => Int -> P.Consumer (ParseP a p) (Maybe a) m [a]
 drawN n0 = ParseP (StateP (\s0 -> E.EitherP (go0 id s0 n0))) where
     go0 diffAs s n = if (n > 0)
         then case S.viewl s of
@@ -177,7 +177,7 @@ drawN n0 = ParseP (StateP (\s0 -> E.EitherP (go0 id s0 n0))) where
     Faster than 'drawN' if you don't need the input
 -}
 skipN
- :: (Monad m, P.Proxy p) => Int -> P.Consumer (ParseP a p) (Maybe a) m ()
+    :: (Monad m, P.Proxy p) => Int -> P.Consumer (ParseP a p) (Maybe a) m ()
 skipN n0 = ParseP (StateP (\s0 -> E.EitherP (go0 s0 n0))) where
     go0 s n = if (n > 0)
         then case S.viewl s of
@@ -199,8 +199,8 @@ skipN n0 = ParseP (StateP (\s0 -> E.EitherP (go0 s0 n0))) where
 
 -- | Request as many consecutive elements satisfying a predicate as possible
 drawWhile
- :: (Monad m, P.Proxy p)
- => (a -> Bool) -> P.Consumer (ParseP a p) (Maybe a) m [a]
+    :: (Monad m, P.Proxy p)
+    => (a -> Bool) -> P.Consumer (ParseP a p) (Maybe a) m [a]
 drawWhile pred = ParseP (StateP (\s0 -> E.EitherP (go0 id s0)))
   where
     go0 diffAs s = case S.viewl s of
@@ -226,8 +226,8 @@ drawWhile pred = ParseP (StateP (\s0 -> E.EitherP (go0 id s0)))
     Faster than 'drawWhile' if you don't need the input
 -}
 skipWhile
- :: (Monad m, P.Proxy p)
- => (a -> Bool) -> P.Consumer (ParseP a p) (Maybe a) m ()
+    :: (Monad m, P.Proxy p)
+    => (a -> Bool) -> P.Consumer (ParseP a p) (Maybe a) m ()
 skipWhile pred = ParseP (StateP (\s0 -> E.EitherP (go0 s0)))
   where
     go0 s = case S.viewl s of
@@ -250,7 +250,7 @@ skipWhile pred = ParseP (StateP (\s0 -> E.EitherP (go0 s0)))
 
 -- | Request the rest of the input
 drawAll
- :: (Monad m, P.Proxy p) => P.Consumer (ParseP a p) (Maybe a) m [a]
+    :: (Monad m, P.Proxy p) => P.Consumer (ParseP a p) (Maybe a) m [a]
 drawAll = ParseP (StateP (\s0 -> E.EitherP (go0 id s0))) where
     go0 diffAs s = case S.viewl s of
         S.EmptyL -> go1 diffAs
@@ -269,7 +269,7 @@ drawAll = ParseP (StateP (\s0 -> E.EitherP (go0 id s0))) where
     Faster than 'drawAll' if you don't need the input
 -}
 skipAll
- :: (Monad m, P.Proxy p) => P.Consumer (ParseP a p) (Maybe a) m ()
+    :: (Monad m, P.Proxy p) => P.Consumer (ParseP a p) (Maybe a) m ()
 skipAll = ParseP (StateP (\s0 -> E.EitherP (go0 s0))) where
     go0 s = case S.viewl s of
         S.EmptyL -> go1
@@ -357,16 +357,16 @@ nextInput = ParseP (StateP (\s -> E.EitherP (case S.viewl s of
 
 -- | Emit a diagnostic message and abort parsing
 parseError
- :: (Monad m, P.Proxy p) => String -> P.Consumer (ParseP a p) (Maybe a) m r
+    :: (Monad m, P.Proxy p) => String -> P.Consumer (ParseP a p) (Maybe a) m r
 parseError str = ParseP (StateP (\_ -> E.EitherP (return (Left str))))
 {-# INLINABLE parseError #-}
 
 -- | Set a new default error message for a parser
 modifyError
- :: (Monad m, P.Proxy p)
- => (String -> String)                     -- ^ Function to modify error message
- -> P.Consumer (ParseP a p) (Maybe a) m r  -- ^ Parser to modify
- -> P.Consumer (ParseP a p) (Maybe a) m r
+    :: (Monad m, P.Proxy p)
+    => (String -> String)  -- ^ Function to modify error message
+    -> P.Consumer (ParseP a p) (Maybe a) m r  -- ^ Parser to modify
+    -> P.Consumer (ParseP a p) (Maybe a) m r
 modifyError f p = ParseP (StateP (\s -> E.EitherP (do
     e <- runEitherP (unStateP (unParseP p) s)
     return (case e of
@@ -376,19 +376,19 @@ modifyError f p = ParseP (StateP (\s -> E.EitherP (do
 
 -- | Set a new default error message for a parser
 setError
- :: (Monad m, P.Proxy p)
- => String                                 -- ^ New default error message
- -> P.Consumer (ParseP a p) (Maybe a) m r  -- ^ Parser to modify
- -> P.Consumer (ParseP a p) (Maybe a) m r
+    :: (Monad m, P.Proxy p)
+    => String                                 -- ^ New default error message
+    -> P.Consumer (ParseP a p) (Maybe a) m r  -- ^ Parser to modify
+    -> P.Consumer (ParseP a p) (Maybe a) m r
 setError str = modifyError (\_ -> str)
 {-# INLINABLE setError #-}
 
 -- | Infix version of 'setError' with arguments flipped
 (<?>)
- :: (Monad m, P.Proxy p)
- => P.Consumer (ParseP a p) (Maybe a) m r  -- ^ Parser to modify
- -> String                                 -- ^ New default error message
- -> P.Consumer (ParseP a p) (Maybe a) m r
+    :: (Monad m, P.Proxy p)
+    => P.Consumer (ParseP a p) (Maybe a) m r  -- ^ Parser to modify
+    -> String                                 -- ^ New default error message
+    -> P.Consumer (ParseP a p) (Maybe a) m r
 p <?> str= setError str p
 {-# INLINABLE (<?>) #-}
 
@@ -403,9 +403,9 @@ instance Exception ParseFailure
     'ParseFailure' exception.
 -}
 evalParseP
- :: (Monad m, P.Proxy p)
- => ParseP i p a' a b' b m r
- -> E.EitherP SomeException p a' a b' b m r
+    :: (Monad m, P.Proxy p)
+    => ParseP i p a' a b' b m r
+    -> E.EitherP SomeException p a' a b' b m r
 evalParseP p = E.EitherP (runCodensityP (runEitherP (
     E.fmapL (toException . ParseFailure) (evalStateP S.empty (unParseP p)))))
 
@@ -413,9 +413,9 @@ evalParseP p = E.EitherP (runCodensityP (runEitherP (
     or failing with a 'ParseFailure' exception.
 -}
 evalParseK
- :: (Monad m, P.Proxy p)
- => (q -> ParseP i p a' a b' b m r)
- -> (q -> E.EitherP SomeException p a' a b' b m r)
+    :: (Monad m, P.Proxy p)
+    => (q -> ParseP i p a' a b' b m r)
+    -> (q -> E.EitherP SomeException p a' a b' b m r)
 evalParseK k q = evalParseP (k q)
 
 {- $reexport
