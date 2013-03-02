@@ -26,13 +26,17 @@ module Control.Proxy.Parse.Commit (
 
     -- * Pushback
     unDraw,
+
+    -- * Fail-safe parsers
+    drawMay,
     peek,
 
     -- * End of input
     endOfInput,
+    isEndOfInput,
     nextInput,
 
-    -- * Diagnostic messages
+    -- * Error messages
     parseError,
     modifyError,
     setError,
@@ -46,12 +50,13 @@ module Control.Proxy.Parse.Commit (
     only,
     onlyK,
     just,
+    justK,
 
     -- * Re-exports
     -- $reexport
     module Control.Applicative,
     module Control.Monad,
-    module Control.Proxy.Trans.Maybe
+    module Control.Proxy.Trans.Either
     ) where
 
 import Control.Applicative (
@@ -61,11 +66,11 @@ import Control.Exception (SomeException, Exception, toException)
 import qualified Control.Proxy as P
 import Control.Proxy ((>>~))
 import Control.Proxy.Parse.Internal (
-    ParseP(ParseP, unParseP), only, onlyK, just)
+    ParseP(ParseP, unParseP), only, onlyK, just, justK)
 import Control.Proxy.Trans.Codensity (runCodensityP)
-import Control.Proxy.Trans.Either (EitherP(EitherP, runEitherP), fmapL)
+import Control.Proxy.Trans.Either (EitherP(EitherP, runEitherP), runEitherK)
+import qualified Control.Proxy.Trans.Either as E
 import Control.Proxy.Trans.State (StateP(StateP, unStateP), evalStateP)
-import Control.Proxy.Trans.Maybe (MaybeP(MaybeP, runMaybeP), runMaybeK)
 import qualified Data.Sequence as S
 import Data.Sequence (ViewL((:<)), (<|))
 import Data.Typeable (Typeable)
@@ -281,6 +286,19 @@ unDraw :: (Monad m, P.Proxy p) => a -> P.Consumer (ParseP a p) (Maybe a) m ()
 unDraw a = ParseP (StateP (\s -> EitherP (return (Right ((), Just a <| s)))))
 {-# INLINABLE unDraw #-}
 
+-- | Request 'Just' one element or 'Nothing' if at end of input
+drawMay :: (Monad m, P.Proxy p) => P.Consumer (ParseP a p) (Maybe a) m (Maybe a)
+drawMay = ParseP (StateP (\s -> EitherP (case S.viewl s of
+    S.EmptyL -> do
+        ma <- P.request ()
+        return (Right (ma, case ma of
+            Nothing -> S.singleton ma
+            _       -> S.empty ))
+    ma:<mas  -> return (Right (ma, case ma of
+        Nothing -> s
+        _       -> mas )) )))
+{-# INLINABLE drawMay #-}
+
 {-| Look ahead one element without consuming it
 
     Faster than 'drawMay' followed by 'unDraw'
@@ -305,6 +323,19 @@ endOfInput = ParseP (StateP (\s -> EitherP (case S.viewl s of
         Nothing -> Right ((), s)
         Just a  -> Left "endOfInput: Not end of input" ) )))
 {-# INLINABLE endOfInput #-}
+
+-- | Return whether cursor is at end of input
+isEndOfInput :: (Monad m, P.Proxy p) => P.Consumer (ParseP a p) (Maybe a) m Bool
+isEndOfInput = ParseP (StateP (\s -> EitherP (case S.viewl s of
+    S.EmptyL -> do
+        ma <- P.request ()
+        return (Right (case ma of
+            Nothing -> True
+            _       -> False , S.singleton ma ))
+    ma:<mas  -> return (Right (case ma of
+        Nothing -> True
+        _       -> False , mas )) )))
+{-# INLINABLE isEndOfInput #-}
 
 {-| Consume the end of input token (i.e. 'Nothing'), advancing to the next input
 
@@ -339,6 +370,7 @@ modifyError f p = ParseP (StateP (\s -> EitherP (do
     return (case e of
         Left  l -> Left (f l)
         Right r -> Right r ) )))
+{-# INLINABLE modifyError #-}
 
 -- | Set a new default error message for a parser
 setError
@@ -347,14 +379,16 @@ setError
  -> P.Consumer (ParseP a p) (Maybe a) m r  -- ^ Parser to modify
  -> P.Consumer (ParseP a p) (Maybe a) m r
 setError str = modifyError (\_ -> str)
+{-# INLINABLE setError #-}
 
--- | Infix version of 'setError'
+-- | Infix version of 'setError' with arguments flipped
 (<?>)
  :: (Monad m, P.Proxy p)
- => String                                 -- ^ New default error message
- -> P.Consumer (ParseP a p) (Maybe a) m r  -- ^ Parser to modify
+ => P.Consumer (ParseP a p) (Maybe a) m r  -- ^ Parser to modify
+ -> String                                 -- ^ New default error message
  -> P.Consumer (ParseP a p) (Maybe a) m r
-(<?>) = setError
+p <?> str= setError str p
+{-# INLINABLE (<?>) #-}
 
 infixl 0 <?>
 
@@ -370,7 +404,7 @@ evalParseP
  => ParseP i p a' a b' b m r
  -> EitherP SomeException p a' a b' b m r
 evalParseP p = EitherP (runCodensityP (runEitherP (
-    fmapL (toException . ParseFailure) (evalStateP S.empty (unParseP p)))))
+    E.fmapL (toException . ParseFailure) (evalStateP S.empty (unParseP p)))))
 
 {-| Evaluate a non-backtracking parser \'@K@\'leisli arrow, returning the result
     or failing with 'Nothing'

@@ -42,6 +42,7 @@ module Control.Proxy.Parse.Backtrack (
     only,
     onlyK,
     just,
+    justK,
 
     -- * Re-exports
     -- $reexport
@@ -59,11 +60,10 @@ import Control.Monad.Trans.State.Strict (StateT(StateT, runStateT))
 import qualified Control.Proxy as P
 import Control.Proxy ((>>~), (//>))
 import Control.Proxy.Parse.Internal (
-    ParseT(ParseT, unParseT), ParseP(ParseP), only, onlyK, just )
+    ParseT(ParseT, unParseT), ParseP(ParseP), only, onlyK, just, justK )
 import Control.Proxy.Trans.Codensity (runCodensityP)
 import Control.Proxy.Trans.Either (EitherP(EitherP))
 import Control.Proxy.Trans.State (StateP(StateP))
-import Data.Monoid (mempty)
 import qualified Data.Sequence as S
 import Data.Sequence (ViewL((:<)), (<|))
 
@@ -180,7 +180,8 @@ drawN n0 = ParseT (StateT (\s0 -> P.RespondT (go0 id s0 n0)))
 
 {-| Skip a fixed number of elements
 
-    Faster than 'drawN' if you don't need the input -}
+    Faster than 'drawN' if you don't need the input
+-}
 skipN :: (Monad m, P.ListT p) => Int -> ParseT p a m ()
 skipN n0 = ParseT (StateT (\s0 -> P.RespondT (go0 s0 n0)))
   where
@@ -224,7 +225,8 @@ drawWhile pred = ParseT (StateT (\s0 -> P.RespondT (go0 id s0)))
 
 {-| Skip as many consecutive elements satisfying a predicate as possible
 
-    Faster than 'drawWhile' if you don't need the input -}
+    Faster than 'drawWhile' if you don't need the input
+-}
 skipWhile :: (Monad m, P.ListT p) => (a -> Bool) -> ParseT p a m ()
 skipWhile pred = ParseT (StateT (\s0 -> P.RespondT (go0 s0)))
   where
@@ -264,7 +266,8 @@ drawAll = ParseT (StateT (\s0 -> P.RespondT (go0 id s0)))
 
 {-| Skip the rest of the input
 
-    Faster than 'drawAll' if you don't need the input -}
+    Faster than 'drawAll' if you don't need the input
+-}
 skipAll :: (Monad m, P.ListT p) => ParseT p a m ()
 skipAll = ParseT (StateT (\s0 -> P.RespondT (go0 s0)))
   where
@@ -284,6 +287,7 @@ skipAll = ParseT (StateT (\s0 -> P.RespondT (go0 s0)))
 unDraw :: (Monad m, P.ListT p) => a -> ParseT p a m ()
 unDraw a = ParseT (StateT (\s -> P.RespondT (
     P.respond ((), Just a <| s) )))
+{-# INLINABLE unDraw #-}
 
 {-| Request 'Just' one element or 'Nothing' if at end of input
 
@@ -300,7 +304,8 @@ drawMay = ParseT (StateT (\s -> P.RespondT (
 
 {-| Look ahead one element without consuming it
 
-    Faster than 'drawMay' followed by 'unDraw' -}
+    Faster than 'drawMay' followed by 'unDraw'
+-}
 peek :: (Monad m, P.ListT p) => ParseT p a m (Maybe a)
 peek = ParseT (StateT (\s -> P.RespondT (
     case S.viewl s of
@@ -308,6 +313,7 @@ peek = ParseT (StateT (\s -> P.RespondT (
             ma <- P.request ()
             fmap (ma <|) (P.respond (ma, S.singleton ma))
         ma:<mas  -> P.respond (ma, s) )))
+{-# INLINABLE peek #-}
 
 -- | Match end of input without consuming it
 endOfInput :: (Monad m, P.ListT p) => ParseT p a m ()
@@ -321,6 +327,7 @@ endOfInput = ParseT (StateT (\s -> P.RespondT (
         ma:<mas  -> case ma of
             Nothing -> P.respond ((), s)
             Just a  -> return S.empty )))
+{-# INLINABLE endOfInput #-}
 
 -- | Return whether cursor is at end of input
 isEndOfInput :: (Monad m, P.ListT p) => ParseT p a m Bool
@@ -334,6 +341,7 @@ isEndOfInput = ParseT (StateT (\s -> P.RespondT (
         ma:<mas  -> P.respond (case ma of
             Nothing -> True
             Just _  -> False, mas) )))
+{-# INLINABLE isEndOfInput #-}
 
 {-| Consume the end of input token, advancing to the next input
 
@@ -350,6 +358,7 @@ nextInput = ParseT (StateT (\s -> P.RespondT (
         ma:<mas  -> case ma of
             Nothing -> P.respond ((), mas)
             Just a  -> return S.empty )))
+{-# INLINABLE nextInput #-}
 
 {-| Convert a backtracking parser to a non-backtracking parser
 
@@ -361,17 +370,19 @@ commit
 commit str p () = ParseP (StateP (\s -> EitherP (
     (do P.runRespondT (runStateT (unParseT p) s) //> \rs -> do
             P.respond rs
-            return mempty
+            return S.empty
         return (Left str) ) >>~ \rs -> return (Right rs) )))
+{-# INLINABLE commit #-}
 
 {-| Convert a backtracking parser to a 'Pipe' that incrementally consumes input
-    and streams valid parse results -}
+    and streams valid parse results
+-}
 evalParseT
  :: (Monad m, P.ListT p) => ParseT p a m r -> () -> P.Pipe p (Maybe a) r m ()
 evalParseT p () = runCodensityP (do
-    P.runRespondT (runStateT (unParseT p) mempty) //> \(r, _) -> do
+    P.runRespondT (runStateT (unParseT p) S.empty) //> \(r, _) -> do
         P.respond r
-        return mempty
+        return S.empty
     return () )
 
 {- $reexport
@@ -379,7 +390,8 @@ evalParseT p () = runCodensityP (do
     'Applicative', and 'Alternative', like 'many', ('<|>'), and 'optional'.
 
     @Control.Monad@' exports useful combinators for 'Monad' and 'MonadPlus',
-    like 'replicateM', 'msum', and 'mfilter'. -}
+    like 'replicateM', 'msum', and 'mfilter'.
+-}
 
 -- | Like 'many', but orders results from fewest to most matches
 few :: (Alternative f) => f a -> f [a]

@@ -1,7 +1,7 @@
 {-| This module exposes internal implementation details that might change in the
     future.  I only expose this so that people can write high-efficiency parsing
-    primitives not implementable in terms of existing primitives. -}
-
+    primitives not implementable in terms of existing primitives.
+-}
 module Control.Proxy.Parse.Internal (
     -- * Backtracking parser
     ParseT(..),
@@ -12,7 +12,8 @@ module Control.Proxy.Parse.Internal (
     -- * End of input utilities
     only,
     onlyK,
-    just
+    just,
+    justK
     ) where
 
 import Control.Applicative (Applicative(pure, (<*>)), Alternative(empty, (<|>)))
@@ -73,7 +74,8 @@ newtype ParseT p a m r = ParseT
 
          I still like to keep the monad transformer stack in order to document
          how the non-backtracking parser works, even if I don't use it to
-         abstract away very much. -}
+         abstract away very much.
+-}
 
 -- Deriving Functor
 instance (Monad m, P.ListT p) => Functor (ParseT p a m) where
@@ -224,7 +226,7 @@ only p = P.runIdentityP (do
     'Nothing'
 -}
 onlyK
- :: (Monad m, P.Proxy p)
+    :: (Monad m, P.Proxy p)
  => (q -> p a' a b' b m r) -> (q -> p a' a b' (Maybe b) m r)
 onlyK k q = only (k q)
 {-# INLINABLE onlyK #-}
@@ -244,3 +246,14 @@ just p = P.runIdentityP $ up >\\ (P.IdentityP p //> dn)
                 x2 <- P.respond Nothing
                 up x2
             Just a  -> return a
+{-# INLINABLE just #-}
+
+{-| Upgrade a proxy \'@K@\'leisli arrow to work with 'Maybe's
+
+    The upgraded proxy handles 'Just's and auto-forwards 'Nothing's
+-}
+justK
+    :: (Monad m, P.ListT p)
+    => (q -> p x a x b m r) -> (q -> p x (Maybe a) x (Maybe b) m r)
+justK k q = just (k q)
+{-# INLINABLE justK #-}
