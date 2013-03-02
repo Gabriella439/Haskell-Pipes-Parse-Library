@@ -11,7 +11,8 @@ module Control.Proxy.Parse.Internal (
 
     -- * End of input utilities
     only,
-    onlyK
+    onlyK,
+    just
     ) where
 
 import Control.Applicative (Applicative(pure, (<*>)), Alternative(empty, (<|>)))
@@ -20,7 +21,7 @@ import Control.Monad.IO.Class(MonadIO(liftIO))
 import Control.Monad.Trans.Class(MonadTrans(lift))
 import Control.Monad.Trans.State.Strict (StateT(StateT, runStateT))
 import qualified Control.Proxy as P
-import Control.Proxy ((->>), (>>~), (?>=))
+import Control.Proxy ((->>), (>>~), (?>=), (>\\), (//>))
 import Control.Proxy.Trans.Codensity(CodensityP)
 import Control.Proxy.Trans.Either (EitherP)
 import Control.Proxy.Trans.State (StateP)
@@ -220,9 +221,26 @@ only p = P.runIdentityP (do
 {-# INLINABLE only #-}
 
 {-| Wrap a proxy \'@K@\'leisli arrow's output in 'Just' and finish with a
-    'Nothing' -}
+    'Nothing'
+-}
 onlyK
  :: (Monad m, P.Proxy p)
  => (q -> p a' a b' b m r) -> (q -> p a' a b' (Maybe b) m r)
 onlyK k q = only (k q)
 {-# INLINABLE onlyK #-}
+
+{-| Upgrade a proxy to work with 'Maybe's
+
+    The upgraded proxy handles 'Just's and auto-forwards 'Nothing's
+-}
+just :: (Monad m, P.ListT p) => p x a x b m r -> p x (Maybe a) x (Maybe b) m r
+just p = P.runIdentityP $ up >\\ (P.IdentityP p //> dn)
+  where
+    dn b = P.respond (Just b)
+    up x = do
+        ma <- P.request x
+        case ma of
+            Nothing -> do
+                x2 <- P.respond Nothing
+                up x2
+            Just a  -> return a

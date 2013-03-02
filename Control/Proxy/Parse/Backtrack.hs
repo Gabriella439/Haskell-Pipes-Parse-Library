@@ -1,6 +1,4 @@
-{-| This module defines the core machinery for both backtracking and
-    non-backtracking parsers.
--}
+-- | This module defines the core machinery for backtracking parsers.
 
 {-# LANGUAGE KindSignatures #-}
 
@@ -10,7 +8,6 @@ module Control.Proxy.Parse.Backtrack (
 
     -- * Single-element parsers
     draw,
-    drawMay,
     skip,
     drawIf,
     skipIf,
@@ -25,6 +22,9 @@ module Control.Proxy.Parse.Backtrack (
 
     -- * Pushback
     unDraw,
+
+    -- * Fail-safe parsers
+    drawMay,
     peek,
 
     -- * End of input
@@ -32,15 +32,16 @@ module Control.Proxy.Parse.Backtrack (
     isEndOfInput,
     nextInput,
 
+    -- * Non-backtracking Parsing
+    commit,
+
     -- * Run functions
     evalParseT,
 
     -- * End-of-input utilities
     only,
     onlyK,
-
-    -- * Non-backtracking Parsing
-    commit,
+    just,
 
     -- * Re-exports
     -- $reexport
@@ -58,7 +59,7 @@ import Control.Monad.Trans.State.Strict (StateT(StateT, runStateT))
 import qualified Control.Proxy as P
 import Control.Proxy ((>>~), (//>))
 import Control.Proxy.Parse.Internal (
-    ParseT(ParseT, unParseT), ParseP(ParseP), only, onlyK )
+    ParseT(ParseT, unParseT), ParseP(ParseP), only, onlyK, just )
 import Control.Proxy.Trans.Codensity (runCodensityP)
 import Control.Proxy.Trans.Either (EitherP(EitherP))
 import Control.Proxy.Trans.State (StateP(StateP))
@@ -102,19 +103,6 @@ draw = ParseT (StateT (\s -> P.RespondT (
             Nothing -> return S.empty
             Just a  -> P.respond (a, mas) )))
 {-# INLINABLE draw #-}
-
-{-| Request 'Just' one element or 'Nothing' if at end of input
-
-> drawMay = (Just <$> draw) <|> (Nothing <$ endOfInput)
--}
-drawMay :: (Monad m, P.ListT p) => ParseT p a m (Maybe a)
-drawMay = ParseT (StateT (\s -> P.RespondT (
-    case S.viewl s of
-        S.EmptyL -> do
-            ma <- P.request ()
-            fmap (ma <|) (P.respond (ma, s))
-        ma:<mas  -> P.respond (ma, mas) )))
-{-# INLINABLE drawMay #-}
 
 -- | Skip a single element
 skip :: (Monad m, P.ListT p) => ParseT p a m ()
@@ -297,6 +285,19 @@ unDraw :: (Monad m, P.ListT p) => a -> ParseT p a m ()
 unDraw a = ParseT (StateT (\s -> P.RespondT (
     P.respond ((), Just a <| s) )))
 
+{-| Request 'Just' one element or 'Nothing' if at end of input
+
+> drawMay = (Just <$> draw) <|> (Nothing <$ endOfInput)
+-}
+drawMay :: (Monad m, P.ListT p) => ParseT p a m (Maybe a)
+drawMay = ParseT (StateT (\s -> P.RespondT (
+    case S.viewl s of
+        S.EmptyL -> do
+            ma <- P.request ()
+            fmap (ma <|) (P.respond (ma, s))
+        ma:<mas  -> P.respond (ma, mas) )))
+{-# INLINABLE drawMay #-}
+
 {-| Look ahead one element without consuming it
 
     Faster than 'drawMay' followed by 'unDraw' -}
@@ -350,16 +351,6 @@ nextInput = ParseT (StateT (\s -> P.RespondT (
             Nothing -> P.respond ((), mas)
             Just a  -> return S.empty )))
 
-{-| Convert a backtracking parser to a 'Pipe' that incrementally consumes input
-    and streams valid parse results -}
-evalParseT
- :: (Monad m, P.ListT p) => ParseT p a m r -> () -> P.Pipe p (Maybe a) r m ()
-evalParseT p () = runCodensityP (do
-    P.runRespondT (runStateT (unParseT p) mempty) //> \(r, _) -> do
-        P.respond r
-        return mempty
-    return () )
-
 {-| Convert a backtracking parser to a non-backtracking parser
 
     Rewinds to starting point if the backtracking parser fails
@@ -372,6 +363,16 @@ commit str p () = ParseP (StateP (\s -> EitherP (
             P.respond rs
             return mempty
         return (Left str) ) >>~ \rs -> return (Right rs) )))
+
+{-| Convert a backtracking parser to a 'Pipe' that incrementally consumes input
+    and streams valid parse results -}
+evalParseT
+ :: (Monad m, P.ListT p) => ParseT p a m r -> () -> P.Pipe p (Maybe a) r m ()
+evalParseT p () = runCodensityP (do
+    P.runRespondT (runStateT (unParseT p) mempty) //> \(r, _) -> do
+        P.respond r
+        return mempty
+    return () )
 
 {- $reexport
     @Control.Applicative@ exports useful combinators for 'Functor',

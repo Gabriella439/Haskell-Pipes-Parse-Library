@@ -45,6 +45,7 @@ module Control.Proxy.Parse.Commit (
     -- * End of input utilities
     only,
     onlyK,
+    just,
 
     -- * Re-exports
     -- $reexport
@@ -59,7 +60,8 @@ import Control.Monad (forever)
 import Control.Exception (SomeException, Exception, toException)
 import qualified Control.Proxy as P
 import Control.Proxy ((>>~))
-import Control.Proxy.Parse.Internal (ParseP(ParseP, unParseP), only, onlyK)
+import Control.Proxy.Parse.Internal (
+    ParseP(ParseP, unParseP), only, onlyK, just)
 import Control.Proxy.Trans.Codensity (runCodensityP)
 import Control.Proxy.Trans.Either (EitherP(EitherP, runEitherP), fmapL)
 import Control.Proxy.Trans.State (StateP(StateP, unStateP), evalStateP)
