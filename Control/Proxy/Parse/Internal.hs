@@ -31,11 +31,11 @@ import qualified Data.Sequence as S
 
 {-| Use 'ParseT' to:
 
-    * parse input incrementally,
-
     * backtrack unlimitedly on failure,
 
-    * return all parsing solutions, and
+    * return all parsing solutions,
+
+    * parse input lazily and incrementally, and
 
     * interleave side effects with parsing.
 -}
@@ -134,9 +134,9 @@ instance (Monad m, P.ListT p) => MonadPlus (ParseT p a m) where
 
     * stream input in as little memory as possible,
 
-    * request input lazily and incrementally,
+    * diagnose parse failures with error messages,
 
-    * diagnose parse failures with error messages, and
+    * parse input lazily and incrementally, and
 
     * interleave side effects with parsing.
 -}
