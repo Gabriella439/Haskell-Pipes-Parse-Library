@@ -2,8 +2,6 @@
     future.  I only expose this so that people can write high-efficiency parsing
     primitives not implementable in terms of existing primitives. -}
 
-{-# LANGUAGE KindSignatures #-}
-
 module Control.Proxy.Parse.Internal (
     -- * Backtracking parser
     ParseT(..),
@@ -20,12 +18,11 @@ import Control.Applicative (Applicative(pure, (<*>)), Alternative(empty, (<|>)))
 import Control.Monad (MonadPlus(mzero, mplus))
 import Control.Monad.IO.Class(MonadIO(liftIO))
 import Control.Monad.Trans.Class(MonadTrans(lift))
-import Control.Monad.Trans.Error (ErrorT(ErrorT, runErrorT))
 import Control.Monad.Trans.State.Strict (StateT(StateT, runStateT))
 import qualified Control.Proxy as P
 import Control.Proxy ((->>), (>>~), (?>=))
 import Control.Proxy.Trans.Codensity(CodensityP)
-import Control.Proxy.Trans.Maybe (MaybeP)
+import Control.Proxy.Trans.Either (EitherP)
 import Control.Proxy.Trans.State (StateP)
 import Data.Sequence (Seq, (><))
 import qualified Data.Sequence as S
@@ -36,19 +33,16 @@ import qualified Data.Sequence as S
 
     * backtrack unlimitedly on failure,
 
-    * return all parsing solutions,
+    * return all parsing solutions, and
 
-    * interleave side effects with parsing, and
-
-    * diagnose parse failures with a stream of informative error messages.
+    * interleave side effects with parsing.
 -}
-newtype ParseT (p :: * -> * -> * -> * -> (* -> *) -> * -> *) a m r =
-    ParseT { unParseT ::
+newtype ParseT p a m r = ParseT
+    { unParseT ::
         StateT (Seq (Maybe a)) (
-            ErrorT String (
-                P.RespondT (CodensityP p) () (Maybe a) (Seq (Maybe a))
-                    m ) ) r }
-{- To understand the ParseT type, begin from a Hutton-Meijer parser:
+            P.RespondT (CodensityP p) () (Maybe a) (Seq (Maybe a)) m) r
+    }
+{- To understand the ParseT type, begin from a Hutton-Meijer monadic parser:
 
 > StateT leftovers [] r
 
@@ -65,14 +59,10 @@ newtype ParseT (p :: * -> * -> * -> * -> (* -> *) -> * -> *) a m r =
 
 > StateT leftovers (RespondT p () input drawn m) r
 
-   Now add 'ErrorT' for error messages (optional, but useful):
-
-> StateT leftovers (ErrorT String (RespondT p () input drawn m)) r
-
-   Finally, layer Codensity over the base proxy so that you don't pay a
+   Finally, layer CodensityP over the base proxy so that you don't pay a
    quadratic time complexity for backtracking:
 
-> StateT leftovers (ErrorT String (RespondT (Codensity p) () input drawn m)) r
+> StateT leftovers (RespondT (CodensityP p) () input drawn m) r
 -}
 
 {- NOTE: Deriving the type class instances from the monad transformer stack
@@ -103,17 +93,15 @@ instance (MonadIO m, P.ListT p) => MonadIO (ParseT p a m) where
     liftIO m = ParseT (liftIO m)
 
 instance (P.ListT p) => MonadTrans (ParseT p i) where
-    lift m = ParseT (lift (lift (lift m)))
+    lift m = ParseT (lift (lift m))
 
 -- NOT deriving Alternative
 instance (Monad m, P.ListT p) => Alternative (ParseT p a m) where
-    empty = ParseT (StateT (\_ -> ErrorT (P.RespondT (return S.empty))))
-    p1 <|> p2 = ParseT (StateT (\s -> ErrorT (P.RespondT (do
-        draw1 <- P.runRespondT (runErrorT (
-            runStateT (unParseT p1)  s           ))
-        draw2 <- P.runRespondT (runErrorT (
-            runStateT (unParseT p2) (s >< draw1) ))
-        return (draw1 >< draw2) ))))
+    empty = ParseT (StateT (\_ -> P.RespondT (return S.empty)))
+    p1 <|> p2 = ParseT (StateT (\s -> P.RespondT (do
+        draw1 <- P.runRespondT (runStateT (unParseT p1)  s          )
+        draw2 <- P.runRespondT (runStateT (unParseT p2) (s >< draw1))
+        return (draw1 >< draw2) )))
 {- Backtracking reuses drawn input from the first branch so that the second
    branch begins from the correct leftover state.  If you omit all the newtypes,
    the above methods are equivalent to:
@@ -125,7 +113,8 @@ instance (Monad m, P.ListT p) => Alternative (ParseT p a m) where
        draw2 <- p2 (s <> draw)
        return (draw1 <> draw2)
 
-   ... and it's simple to show that these satisfy the Alternative laws:
+   ... and it's simple to show that those definitions satisfy the Alternative
+   laws:
 
    p <|> empty = p
 
@@ -144,12 +133,12 @@ instance (Monad m, P.ListT p) => MonadPlus (ParseT p a m) where
 
     * request input lazily and incrementally,
 
-    * interleave side effects with parsing, and
+    * diagnose parse failures with error messages, and
 
-    * diagnose parse failures with a stream of informative error messages.
+    * interleave side effects with parsing.
 -}
 newtype ParseP i p a' a b' b m r = ParseP { unParseP ::
-    MaybeP (StateP (Seq (Maybe i)) (CodensityP p)) a' a b' b m r }
+    StateP (Seq (Maybe i)) (EitherP String (CodensityP p)) a' a b' b m r }
 
 -- Deriving Functor
 instance (P.Proxy p, Monad m) => Functor (ParseP i p a' a b' b m) where
@@ -160,23 +149,29 @@ instance (P.Proxy p, Monad m) => Applicative (ParseP i p a' a b' b m) where
     pure r  = ParseP (pure r)
     f <*> x = ParseP (unParseP f <*> unParseP x)
 
+-- Deriving Monad
 instance (P.Proxy p, Monad m) => Monad (ParseP i p a' a b' b m) where
     return = P.return_P
     (>>=)  = (?>=)
 
+-- Deriving MonadTrans
 instance (P.Proxy p) => MonadTrans (ParseP i p a' a b' b) where
     lift = P.lift_P
 
+-- Deriving MFunctor
 instance (P.Proxy p) => P.MFunctor (ParseP i p a' a b' b) where
     hoist = P.hoist_P
 
+-- Deriving MonadIO
 instance (MonadIO m, P.Proxy p) => MonadIO (ParseP i p a' a b' b m) where
     liftIO = P.liftIO_P
 
+-- Deriving Alternative
 instance (Monad m, P.Proxy p) => Alternative (ParseP i p a' a b' b m) where
     empty = mzero
     (<|>) = mplus
 
+-- Deriving MonadPlus
 instance (Monad m, P.Proxy p) => MonadPlus (ParseP i p a' a b' b m) where
     mzero = P.mzero_P
     mplus = P.mplus_P
