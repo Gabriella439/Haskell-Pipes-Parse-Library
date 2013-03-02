@@ -366,8 +366,8 @@ nextInput = ParseT (StateT (\s -> P.RespondT (
 -}
 commit
  :: (Monad m, P.ListT p)
- => String -> ParseT p a m r -> () -> P.Consumer (ParseP a p) (Maybe a) m r
-commit str p () = ParseP (StateP (\s -> EitherP (
+ => String -> ParseT p a m r -> P.Consumer (ParseP a p) (Maybe a) m r
+commit str p = ParseP (StateP (\s -> EitherP (
     (do P.runRespondT (runStateT (unParseT p) s) //> \rs -> do
             P.respond rs
             return S.empty
