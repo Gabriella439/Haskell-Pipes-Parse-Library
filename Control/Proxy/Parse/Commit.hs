@@ -419,7 +419,7 @@ evalParseK k q = evalParseP (k q)
     @Control.Applicative@ exports useful combinators for 'Functor',
     'Applicative', and 'Alternative', like 'many', ('<|>'), and 'optional'.
 
-    @Control.Monad@' exports useful combinators for 'Monad' and 'MonadPlus',
+    @Control.Monad@ exports useful combinators for 'Monad' and 'MonadPlus',
     like 'replicateM', 'msum', and 'mfilter'.
 
     @Control.Monad.Trans.Maybe@ exports run functions for the 'MaybeP' proxy

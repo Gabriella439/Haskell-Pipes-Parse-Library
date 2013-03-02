@@ -389,7 +389,7 @@ evalParseT p () = runCodensityP (do
     @Control.Applicative@ exports useful combinators for 'Functor',
     'Applicative', and 'Alternative', like 'many', ('<|>'), and 'optional'.
 
-    @Control.Monad@' exports useful combinators for 'Monad' and 'MonadPlus',
+    @Control.Monad@ exports useful combinators for 'Monad' and 'MonadPlus',
     like 'replicateM', 'msum', and 'mfilter'.
 -}
 
