@@ -42,6 +42,9 @@ module Control.Proxy.Parse.Commit (
     setError,
     (<?>),
 
+    -- * Parse exception
+    ParseFailure(..),
+
     -- * Run functions
     evalParseP,
     evalParseK,
@@ -61,14 +64,13 @@ module Control.Proxy.Parse.Commit (
 
 import Control.Applicative (
     Applicative(pure, (<*>), (<*), (*>)), Alternative(empty, (<|>), some, many))
-import Control.Monad (forever)
 import Control.Exception (SomeException, Exception, toException)
 import qualified Control.Proxy as P
 import Control.Proxy ((>>~))
 import Control.Proxy.Parse.Internal (
     ParseP(ParseP, unParseP), only, onlyK, just, justK)
 import Control.Proxy.Trans.Codensity (runCodensityP)
-import Control.Proxy.Trans.Either (EitherP(EitherP, runEitherP), runEitherK)
+import Control.Proxy.Trans.Either (runEitherP, runEitherK)
 import qualified Control.Proxy.Trans.Either as E
 import Control.Proxy.Trans.State (StateP(StateP, unStateP), evalStateP)
 import qualified Data.Sequence as S
@@ -82,7 +84,7 @@ import Control.Monad (
 
 -- | Request a single element
 draw :: (Monad m, P.Proxy p) => P.Consumer (ParseP a p) (Maybe a) m a
-draw = ParseP (StateP (\s -> EitherP (case S.viewl s of
+draw = ParseP (StateP (\s -> E.EitherP (case S.viewl s of
     S.EmptyL -> do
         ma <- P.request ()
         return (case ma of
@@ -95,7 +97,7 @@ draw = ParseP (StateP (\s -> EitherP (case S.viewl s of
 
 -- | Skip a single element
 skip :: (Monad m, P.Proxy p) => P.Consumer (ParseP a p) (Maybe a) m ()
-skip = ParseP (StateP (\s -> EitherP (case S.viewl s of
+skip = ParseP (StateP (\s -> E.EitherP (case S.viewl s of
     S.EmptyL -> do
         ma <- P.request ()
         return (case ma of
@@ -110,7 +112,7 @@ skip = ParseP (StateP (\s -> EitherP (case S.viewl s of
 drawIf
  :: (Monad m, P.Proxy p)
  => (a -> Bool) -> P.Consumer (ParseP a p) (Maybe a) m a
-drawIf pred = ParseP (StateP (\s -> EitherP (case S.viewl s of
+drawIf pred = ParseP (StateP (\s -> E.EitherP (case S.viewl s of
     S.EmptyL -> do
         ma <- P.request ()
         return (case ma of
@@ -131,7 +133,7 @@ drawIf pred = ParseP (StateP (\s -> EitherP (case S.viewl s of
 skipIf
  :: (Monad m, P.Proxy p)
  => (a -> Bool) -> P.Consumer (ParseP a p) (Maybe a) m ()
-skipIf pred = ParseP (StateP (\s -> EitherP (case S.viewl s of
+skipIf pred = ParseP (StateP (\s -> E.EitherP (case S.viewl s of
     S.EmptyL -> do
         ma <- P.request ()
         return (case ma of
@@ -151,7 +153,7 @@ skipIf pred = ParseP (StateP (\s -> EitherP (case S.viewl s of
 -- | Request a fixed number of elements
 drawN
  :: (Monad m, P.Proxy p) => Int -> P.Consumer (ParseP a p) (Maybe a) m [a]
-drawN n0 = ParseP (StateP (\s0 -> EitherP (go0 id s0 n0))) where
+drawN n0 = ParseP (StateP (\s0 -> E.EitherP (go0 id s0 n0))) where
     go0 diffAs s n = if (n > 0)
         then case S.viewl s of
             S.EmptyL -> go1 diffAs n
@@ -176,7 +178,7 @@ drawN n0 = ParseP (StateP (\s0 -> EitherP (go0 id s0 n0))) where
 -}
 skipN
  :: (Monad m, P.Proxy p) => Int -> P.Consumer (ParseP a p) (Maybe a) m ()
-skipN n0 = ParseP (StateP (\s0 -> EitherP (go0 s0 n0))) where
+skipN n0 = ParseP (StateP (\s0 -> E.EitherP (go0 s0 n0))) where
     go0 s n = if (n > 0)
         then case S.viewl s of
             S.EmptyL -> go1 n
@@ -199,7 +201,7 @@ skipN n0 = ParseP (StateP (\s0 -> EitherP (go0 s0 n0))) where
 drawWhile
  :: (Monad m, P.Proxy p)
  => (a -> Bool) -> P.Consumer (ParseP a p) (Maybe a) m [a]
-drawWhile pred = ParseP (StateP (\s0 -> EitherP (go0 id s0)))
+drawWhile pred = ParseP (StateP (\s0 -> E.EitherP (go0 id s0)))
   where
     go0 diffAs s = case S.viewl s of
         S.EmptyL -> go1 diffAs
@@ -226,7 +228,7 @@ drawWhile pred = ParseP (StateP (\s0 -> EitherP (go0 id s0)))
 skipWhile
  :: (Monad m, P.Proxy p)
  => (a -> Bool) -> P.Consumer (ParseP a p) (Maybe a) m ()
-skipWhile pred = ParseP (StateP (\s0 -> EitherP (go0 s0)))
+skipWhile pred = ParseP (StateP (\s0 -> E.EitherP (go0 s0)))
   where
     go0 s = case S.viewl s of
         S.EmptyL -> go1
@@ -249,7 +251,7 @@ skipWhile pred = ParseP (StateP (\s0 -> EitherP (go0 s0)))
 -- | Request the rest of the input
 drawAll
  :: (Monad m, P.Proxy p) => P.Consumer (ParseP a p) (Maybe a) m [a]
-drawAll = ParseP (StateP (\s0 -> EitherP (go0 id s0))) where
+drawAll = ParseP (StateP (\s0 -> E.EitherP (go0 id s0))) where
     go0 diffAs s = case S.viewl s of
         S.EmptyL -> go1 diffAs
         ma:<mas  -> case ma of
@@ -268,7 +270,7 @@ drawAll = ParseP (StateP (\s0 -> EitherP (go0 id s0))) where
 -}
 skipAll
  :: (Monad m, P.Proxy p) => P.Consumer (ParseP a p) (Maybe a) m ()
-skipAll = ParseP (StateP (\s0 -> EitherP (go0 s0))) where
+skipAll = ParseP (StateP (\s0 -> E.EitherP (go0 s0))) where
     go0 s = case S.viewl s of
         S.EmptyL -> go1
         ma:<mas  -> case ma of
@@ -283,12 +285,12 @@ skipAll = ParseP (StateP (\s0 -> EitherP (go0 s0))) where
 
 -- | Push a single element into the leftover buffer
 unDraw :: (Monad m, P.Proxy p) => a -> P.Consumer (ParseP a p) (Maybe a) m ()
-unDraw a = ParseP (StateP (\s -> EitherP (return (Right ((), Just a <| s)))))
+unDraw a = ParseP (StateP (\s -> E.EitherP (return (Right ((), Just a <| s)))))
 {-# INLINABLE unDraw #-}
 
 -- | Request 'Just' one element or 'Nothing' if at end of input
 drawMay :: (Monad m, P.Proxy p) => P.Consumer (ParseP a p) (Maybe a) m (Maybe a)
-drawMay = ParseP (StateP (\s -> EitherP (case S.viewl s of
+drawMay = ParseP (StateP (\s -> E.EitherP (case S.viewl s of
     S.EmptyL -> do
         ma <- P.request ()
         return (Right (ma, case ma of
@@ -304,7 +306,7 @@ drawMay = ParseP (StateP (\s -> EitherP (case S.viewl s of
     Faster than 'drawMay' followed by 'unDraw'
 -}
 peek :: (Monad m, P.Proxy p) => P.Consumer (ParseP a p) (Maybe a) m (Maybe a)
-peek = ParseP (StateP (\s -> EitherP (case S.viewl s of
+peek = ParseP (StateP (\s -> E.EitherP (case S.viewl s of
     S.EmptyL -> do
         ma <- P.request ()
         return (Right (ma, S.singleton ma))
@@ -313,7 +315,7 @@ peek = ParseP (StateP (\s -> EitherP (case S.viewl s of
 
 -- | Match end of input without consuming it
 endOfInput :: (Monad m, P.Proxy p) => P.Consumer (ParseP a p) (Maybe a) m ()
-endOfInput = ParseP (StateP (\s -> EitherP (case S.viewl s of
+endOfInput = ParseP (StateP (\s -> E.EitherP (case S.viewl s of
     S.EmptyL -> do
         ma <- P.request ()
         return (case ma of
@@ -326,7 +328,7 @@ endOfInput = ParseP (StateP (\s -> EitherP (case S.viewl s of
 
 -- | Return whether cursor is at end of input
 isEndOfInput :: (Monad m, P.Proxy p) => P.Consumer (ParseP a p) (Maybe a) m Bool
-isEndOfInput = ParseP (StateP (\s -> EitherP (case S.viewl s of
+isEndOfInput = ParseP (StateP (\s -> E.EitherP (case S.viewl s of
     S.EmptyL -> do
         ma <- P.request ()
         return (Right (case ma of
@@ -342,7 +344,7 @@ isEndOfInput = ParseP (StateP (\s -> EitherP (case S.viewl s of
     This is the only primitive that consumes the end of input token.
 -}
 nextInput :: (Monad m, P.Proxy p) => P.Consumer (ParseP a p) (Maybe a) m ()
-nextInput = ParseP (StateP (\s -> EitherP (case S.viewl s of
+nextInput = ParseP (StateP (\s -> E.EitherP (case S.viewl s of
     S.EmptyL -> do
         ma <- P.request ()
         return (case ma of
@@ -356,7 +358,7 @@ nextInput = ParseP (StateP (\s -> EitherP (case S.viewl s of
 -- | Emit a diagnostic message and abort parsing
 parseError
  :: (Monad m, P.Proxy p) => String -> P.Consumer (ParseP a p) (Maybe a) m r
-parseError str = ParseP (StateP (\_ -> EitherP (return (Left str))))
+parseError str = ParseP (StateP (\_ -> E.EitherP (return (Left str))))
 {-# INLINABLE parseError #-}
 
 -- | Set a new default error message for a parser
@@ -365,7 +367,7 @@ modifyError
  => (String -> String)                     -- ^ Function to modify error message
  -> P.Consumer (ParseP a p) (Maybe a) m r  -- ^ Parser to modify
  -> P.Consumer (ParseP a p) (Maybe a) m r
-modifyError f p = ParseP (StateP (\s -> EitherP (do
+modifyError f p = ParseP (StateP (\s -> E.EitherP (do
     e <- runEitherP (unStateP (unParseP p) s)
     return (case e of
         Left  l -> Left (f l)
@@ -392,27 +394,28 @@ p <?> str= setError str p
 
 infixl 0 <?>
 
+-- | Parsing failed.  The 'String' describes the nature of the parse failure.
 newtype ParseFailure = ParseFailure String deriving (Show, Typeable)
 
 instance Exception ParseFailure
 
-{-| Evaluate a non-backtracking parser, returning the result or failing with
-    'Nothing'
+{-| Evaluate a non-backtracking parser, returning the result or failing with a
+    'ParseFailure' exception.
 -}
 evalParseP
  :: (Monad m, P.Proxy p)
  => ParseP i p a' a b' b m r
- -> EitherP SomeException p a' a b' b m r
-evalParseP p = EitherP (runCodensityP (runEitherP (
+ -> E.EitherP SomeException p a' a b' b m r
+evalParseP p = E.EitherP (runCodensityP (runEitherP (
     E.fmapL (toException . ParseFailure) (evalStateP S.empty (unParseP p)))))
 
 {-| Evaluate a non-backtracking parser \'@K@\'leisli arrow, returning the result
-    or failing with 'Nothing'
+    or failing with a 'ParseFailure' exception.
 -}
 evalParseK
  :: (Monad m, P.Proxy p)
  => (q -> ParseP i p a' a b' b m r)
- -> (q -> EitherP SomeException p a' a b' b m r)
+ -> (q -> E.EitherP SomeException p a' a b' b m r)
 evalParseK k q = evalParseP (k q)
 
 {- $reexport
@@ -422,6 +425,6 @@ evalParseK k q = evalParseP (k q)
     @Control.Monad@ exports useful combinators for 'Monad' and 'MonadPlus',
     like 'replicateM', 'msum', and 'mfilter'.
 
-    @Control.Monad.Trans.Maybe@ exports run functions for the 'MaybeP' proxy
+    @Control.Monad.Trans.Either@ exports run functions for the 'E.EitherP' proxy
     transformer.
 -}
