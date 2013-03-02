@@ -25,5 +25,6 @@ Library
     Exposed-Modules:
         Control.Proxy.Parse.Backtrack,
         Control.Proxy.Parse.Commit,
-        Control.Proxy.Parse.Internal
+        Control.Proxy.Parse.Internal,
+        Control.Proxy.String.Backtrack
     Default-Language: Haskell98
