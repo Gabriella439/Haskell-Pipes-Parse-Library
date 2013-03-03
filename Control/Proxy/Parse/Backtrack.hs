@@ -27,10 +27,13 @@ module Control.Proxy.Parse.Backtrack (
     drawMay,
     peek,
 
+    -- * Delimited Parsing
+    parseN,
+    parseWhile,
+
     -- * End of input
     endOfInput,
     isEndOfInput,
-    nextInput,
 
     -- * Non-backtracking Parsing
     commit,
@@ -64,8 +67,9 @@ import Control.Proxy.Parse.Internal (
 import Control.Proxy.Trans.Codensity (runCodensityP)
 import Control.Proxy.Trans.Either (EitherP(EitherP))
 import Control.Proxy.Trans.State (StateP(StateP))
+import Data.Maybe (isJust, isNothing)
 import qualified Data.Sequence as S
-import Data.Sequence (ViewL((:<)), (<|))
+import Data.Sequence (ViewL((:<)), (<|), (|>), (><))
 
 -- For re-exports
 import Control.Applicative ((<$>), (<$), (<**>), optional)
@@ -319,6 +323,74 @@ peek = ParseT (StateT (\s -> P.RespondT (
         ma:<mas  -> P.respond (ma, s) )))
 {-# INLINABLE peek #-}
 
+{- NOTE: parseN and parseWhile work by inserting a fake end-of-input marker
+         (i.e. Nothing) using a 'block' function and then removing it after the
+         parser completes using an 'unblock' function.  This trick does not
+         work if the user's parser can consume the end-of-input marker, so I
+         cannot expose any parsing primitives that consume this marker.
+-}
+
+-- | @(parseN n p)@ restricts the parser @p@ to only use the next @n@ elements
+parseN :: (Monad m, P.ListT p) => Int -> ParseT p a m r -> ParseT p a m r
+parseN n0 p = do
+    block
+    r <- p
+    unBlock
+    return r
+  where
+    block = ParseT (StateT (\s -> P.RespondT (do
+        case (S.findIndexL isNothing s) of
+            Nothing -> go s (n0 - S.length s)
+            Just n
+                | n < n0    -> return S.empty
+                | otherwise -> do
+                    let (prefix, suffix) = S.splitAt n0 s
+                    P.respond ((), (prefix |> Nothing) >< suffix) )))
+    go s n = if (n > 0)
+        then do
+            ma <- P.request ()
+            case ma of
+                Nothing -> return (S.singleton ma)
+                _       -> fmap (ma <|) (go (s |> ma) $! n - 1)
+        else P.respond ((), s |> Nothing)
+    unBlock = ParseT (StateT (\s -> P.RespondT (do
+        let (prefix, suffix) = S.spanl isJust s
+        P.respond ((), prefix >< (case S.viewl suffix of
+            S.EmptyL -> suffix
+            _:<mas   -> mas )) )))
+{-# INLINABLE parseN #-}
+
+{-| @(parseWhile pred p)@ restricts the parser @p@ to only use input that
+    satisfies the predicate @pred@. -}
+parseWhile
+    :: (Monad m, P.ListT p) => (a -> Bool) -> ParseT p a m r -> ParseT p a m r
+parseWhile pred p = do
+    block
+    r <- p
+    unBlock
+    return r
+  where
+    block = ParseT (StateT (\s -> P.RespondT (do
+        case (S.findIndexL (maybe True (not . pred)) s) of
+            Nothing -> go s
+            Just n  -> do
+                let (prefix, suffix) = S.splitAt n s
+                P.respond ((), (prefix |> Nothing) >< suffix) )))
+    go s = do
+        ma <- P.request ()
+        fmap (ma <|) (case ma of
+            Nothing -> P.respond ((), s |> Nothing |> ma)
+            Just a  ->
+                if (pred a)
+                    then go (s |> ma)
+                    else P.respond ((), s |> Nothing |> ma) )
+    unBlock = ParseT (StateT (\s -> P.RespondT (do
+        let (prefix, suffix) = S.spanl isJust s
+        P.respond ((), prefix >< (case S.viewl suffix of
+            S.EmptyL -> suffix
+            _:<mas   -> mas )) )))
+{-# INLINABLE parseWhile #-}
+
 -- | Match end of input without consuming it
 endOfInput :: (Monad m, P.ListT p) => ParseT p a m ()
 endOfInput = ParseT (StateT (\s -> P.RespondT (
@@ -346,23 +418,6 @@ isEndOfInput = ParseT (StateT (\s -> P.RespondT (
             Nothing -> True
             Just _  -> False, mas) )))
 {-# INLINABLE isEndOfInput #-}
-
-{-| Consume the end of input token, advancing to the next input
-
-    This is the only primitive that consumes the end of input token.
--}
-nextInput :: (Monad m, P.ListT p) => ParseT p a m ()
-nextInput = ParseT (StateT (\s -> P.RespondT (
-    case S.viewl s of
-        S.EmptyL -> do
-            ma <- P.request ()
-            case ma of
-                Nothing -> fmap (ma <|) (P.respond ((), s))
-                Just a  -> return (S.singleton ma)
-        ma:<mas  -> case ma of
-            Nothing -> P.respond ((), mas)
-            Just a  -> return S.empty )))
-{-# INLINABLE nextInput #-}
 
 {-| Convert a backtracking parser to a non-backtracking parser
 
