@@ -1,15 +1,24 @@
 module Control.Proxy.String.Backtrack (
+    -- * Single-character parsers
     drawChar,
     skipChar,
     drawCharIf,
     skipCharIf,
+
+    -- * Efficient bulk parsers
     drawCharN,
     skipCharN,
     drawCharWhile,
     skipCharWhile,
+    drawCharAll,
+
+    -- * Exact matches
     char,
     string,
-    word 
+
+    -- * Groups
+    word, 
+    line
     ) where
 
 import Control.Monad
@@ -17,6 +26,7 @@ import Control.Proxy
 import Control.Proxy.Parse.Backtrack
 import Data.Char
 
+-- | Request a single character
 drawChar :: (Monad m, ListT p) => ParseT p String m Char
 drawChar = do
     skipWhile null
@@ -24,17 +34,21 @@ drawChar = do
     unDraw str
     return c
 
+-- | Skip a single character
 skipChar :: (Monad m, ListT p) => ParseT p String m ()
 skipChar = void drawChar
 
+-- | Request a single character that must satisfy the predicate
 drawCharIf :: (Monad m, ListT p) => (Char -> Bool) -> ParseT p String m Char
 drawCharIf pred = do
     c <- drawChar
     if (pred c) then return c else empty
 
+-- | Skip a single character that must satisfy the predicate
 skipCharIf :: (Monad m, ListT p) => (Char -> Bool) -> ParseT p String m ()
 skipCharIf pred = void (drawCharIf pred)
 
+-- | Request a fixed number of characters
 drawCharN :: (Monad m, ListT p) => Int -> ParseT p String m String
 drawCharN = go0
   where
@@ -54,6 +68,10 @@ drawCharN = go0
                         unDraw suffix
                         return (diffStr prefix)
 
+{-| Skip a fixed number of characters
+
+    Faster than 'drawCharN' if you don't need the input
+-}
 skipCharN :: (Monad m, ListT p) => Int -> ParseT p String m ()
 skipCharN = go0
   where
@@ -73,6 +91,7 @@ skipCharN = go0
                         unDraw suffix
                         return ()
 
+-- | Request as many consecutive characters satisfying a predicate as possible
 drawCharWhile
     :: (Monad m, ListT p) => (Char -> Bool) -> ParseT p String m String
 drawCharWhile pred = go id
@@ -89,6 +108,10 @@ drawCharWhile pred = go id
                         unDraw suffix
                         return (diffStr prefix)
 
+{-| Skip as many consecutive characters satisfying a predicate as possible
+
+    Faster than 'drawWhile' if you don't need the input
+-}
 skipCharWhile
     :: (Monad m, ListT p) => (Char -> Bool) -> ParseT p String m ()
 skipCharWhile pred = go
@@ -102,6 +125,15 @@ skipCharWhile pred = go
                 if (null suffix)
                     then go
                     else unDraw suffix
+
+drawCharAll :: (Monad m, ListT p) => ParseT p String m String
+drawCharAll = go id
+  where
+    go diffStr = do
+        mstr <- drawMay
+        case mstr of
+            Nothing  -> return (diffStr "")
+            Just str -> go (diffStr . (str ++))
 
 char :: (Monad m, ListT p) => Char -> ParseT p String m Char
 char c = do
