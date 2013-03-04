@@ -36,6 +36,7 @@ module Control.Proxy.String.Backtrack (
     line,
 
     -- * Re-exports
+    -- $reexport
     module Data.Char
     ) where
 
@@ -63,6 +64,8 @@ import Data.Char (
     isLatin1,
     isAsciiUpper,
     isAsciiLower )
+import qualified Data.Char as C
+import Data.List (foldl')
 
 -- | Request a single character
 drawChar :: (Monad m, ListT p) => ParseT p String m Char
@@ -164,7 +167,7 @@ skipCharWhile pred = go
 
 -- | Request the rest of the input
 drawCharAll :: (Monad m, ListT p) => ParseT p String m String
-drawCharAll = fmap concat drawAll
+drawCharAll = concat <$> drawAll
 
 {-| Skip the rest of the input
 
@@ -226,3 +229,23 @@ line = do
     str <- drawCharWhile (/= '\n')
     char '\n'
     return str
+
+decimal :: (Monad m, ListT p, Integral r) => ParseT p String m r
+decimal = do
+    digits <- drawCharWhile (\c -> c >= '0' && c <= '9')
+    if (null digits)
+        then empty
+        else return $
+                 foldl' (\n c -> n * 10 + fromIntegral (C.ord c - 48)) 0 digits
+
+signed
+    :: (Monad m, ListT p, Num r) => ParseT p String m r -> ParseT p String m r
+signed p = msum
+    [ negate <$> (char '-' *> p)
+    , char '+' *> p
+    , p
+    ]
+
+{- $reexport
+    The @Data.Char@ re-export includes all the 'isXXX' classification functions.
+-}
