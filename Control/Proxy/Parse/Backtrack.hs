@@ -27,7 +27,7 @@ module Control.Proxy.Parse.Backtrack (
     drawMay,
     peek,
 
-    -- * Delimited Parsing
+    -- * Delimited parsing
     parseN,
     parseWhile,
 
@@ -35,7 +35,7 @@ module Control.Proxy.Parse.Backtrack (
     endOfInput,
     isEndOfInput,
 
-    -- * Non-backtracking Parsing
+    -- * Non-backtracking parsing
     commit,
 
     -- * Run functions
