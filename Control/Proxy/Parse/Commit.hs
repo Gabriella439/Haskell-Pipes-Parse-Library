@@ -31,10 +31,13 @@ module Control.Proxy.Parse.Commit (
     drawMay,
     peek,
 
+    -- * Delimited parsing
+    parseN,
+    parseWhile,
+
     -- * End of input
     endOfInput,
     isEndOfInput,
-    nextInput,
 
     -- * Error messages
     parseError,
@@ -73,8 +76,9 @@ import Control.Proxy.Trans.Codensity (runCodensityP)
 import Control.Proxy.Trans.Either (runEitherP, runEitherK)
 import qualified Control.Proxy.Trans.Either as E
 import Control.Proxy.Trans.State (StateP(StateP, unStateP), evalStateP)
+import Data.Maybe (isJust, isNothing)
 import qualified Data.Sequence as S
-import Data.Sequence (ViewL((:<)), (<|))
+import Data.Sequence (ViewL((:<)), (<|), (|>), (><))
 import Data.Typeable (Typeable)
 
 -- For re-exports
@@ -313,6 +317,83 @@ peek = ParseP (StateP (\s -> E.EitherP (case S.viewl s of
     ma:<mas  -> return (Right (ma, s)) )))
 {-# INLINABLE peek #-}
 
+{- NOTE: parseN and parseWhile work by inserting a fake end-of-input marker
+         (i.e. Nothing) using a 'block' function and then removing it after the
+         parser completes using an 'unblock' function.  This trick does not
+         work if the user's parser can consume the end-of-input marker, so I
+         cannot expose any parsing primitives that consume this marker.
+-}
+
+-- | @(parseN n p)@ restricts the parser @p@ to only use the next @n@ elements
+parseN
+    :: (Monad m, P.Proxy p)
+    => Int
+    -> P.Consumer (ParseP a p) (Maybe a) m r
+    -> P.Consumer (ParseP a p) (Maybe a) m r
+parseN n0 p = do
+    block
+    r <- p
+    unBlock
+    return r
+  where
+    block = ParseP (StateP (\s -> E.EitherP (do
+        case (S.findIndexL isNothing s) of
+            Nothing -> go s (n0 - S.length s)
+            Just n
+                | n < n0    -> return (Left (err (S.length s)))
+                | otherwise -> do
+                    let (prefix, suffix) = S.splitAt n0 s
+                    return (Right ((), (prefix |> Nothing) >< suffix)) )))
+    go s n = if (n > 0)
+        then do
+            ma <- P.request ()
+            case ma of
+                Nothing -> return (Left (err n))
+                _       -> go (s |> ma) $! n - 1
+        else return (Right ((), s |> Nothing))
+    unBlock = ParseP (StateP (\s -> E.EitherP (do
+        let (prefix, suffix) = S.spanl isJust s
+        return (Right ((), prefix >< (case S.viewl suffix of
+            S.EmptyL -> suffix
+            _:<mas   -> mas ))) )))
+    err nLeft = "parseN " ++ show n0 ++ ": Found only " ++ show (n0 - nLeft)
+             ++ " elements"
+{-# INLINABLE parseN #-}
+
+{-| @(parseWhile pred p)@ restricts the parser @p@ to only use input that
+    satisfies the predicate @pred@. -}
+parseWhile
+    :: (Monad m, P.Proxy p)
+    => (a -> Bool)
+    -> P.Consumer (ParseP a p) (Maybe a) m r
+    -> P.Consumer (ParseP a p) (Maybe a) m r
+parseWhile pred p = do
+    block
+    r <- p
+    unBlock
+    return r
+  where
+    block = ParseP (StateP (\s -> E.EitherP (do
+        case (S.findIndexL (maybe True (not . pred)) s) of
+            Nothing -> go s
+            Just n  -> do
+                let (prefix, suffix) = S.splitAt n s
+                return (Right ((), (prefix |> Nothing) >< suffix)) )))
+    go s = do
+        ma <- P.request ()
+        case ma of
+            Nothing -> return (Right ((), s |> Nothing |> ma))
+            Just a  ->
+                if (pred a)
+                    then go (s |> ma)
+                    else return (Right ((), s |> Nothing |> ma))
+    unBlock = ParseP (StateP (\s -> E.EitherP (do
+        let (prefix, suffix) = S.spanl isJust s
+        return (Right ((), prefix >< (case S.viewl suffix of
+            S.EmptyL -> suffix
+            _:<mas   -> mas ))) )))
+{-# INLINABLE parseWhile #-}
+
 -- | Match end of input without consuming it
 endOfInput :: (Monad m, P.Proxy p) => P.Consumer (ParseP a p) (Maybe a) m ()
 endOfInput = ParseP (StateP (\s -> E.EitherP (case S.viewl s of
@@ -338,22 +419,6 @@ isEndOfInput = ParseP (StateP (\s -> E.EitherP (case S.viewl s of
         Nothing -> True
         _       -> False , mas )) )))
 {-# INLINABLE isEndOfInput #-}
-
-{-| Consume the end of input token (i.e. 'Nothing'), advancing to the next input
-
-    This is the only primitive that consumes the end of input token.
--}
-nextInput :: (Monad m, P.Proxy p) => P.Consumer (ParseP a p) (Maybe a) m ()
-nextInput = ParseP (StateP (\s -> E.EitherP (case S.viewl s of
-    S.EmptyL -> do
-        ma <- P.request ()
-        return (case ma of
-            Nothing -> Right ((), S.empty)
-            Just a  -> Left "nextInput: Not end of input" )
-    ma:<mas  -> return (case ma of
-        Nothing -> Right ((), mas)
-        Just a  -> Left "nextInput: Not end of input" ) )))
-{-# INLINABLE nextInput #-}
 
 -- | Emit a diagnostic message and abort parsing
 parseError
