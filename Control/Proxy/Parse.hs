@@ -6,9 +6,12 @@
     code, unlike backtracking parsers, which you must first 'commit' before
     embedding within a pipe.
 -}
-module Control.Proxy.Parse.Commit (
+module Control.Proxy.Parse (
     -- * Non-backtracking parser
     ParseP,
+
+    -- * Parse exception
+    ParseFailure(..),
 
     -- * Single-element parsers
     draw,
@@ -20,6 +23,7 @@ module Control.Proxy.Parse.Commit (
     drawN,
     skipN,
     drawWhile,
+{-
     skipWhile,
     drawAll,
     skipAll,
@@ -36,8 +40,8 @@ module Control.Proxy.Parse.Commit (
     parseWhile,
 
     -- * End of input
-    endOfInput,
-    isEndOfInput,
+    endOfInS.put,
+    isEndOfInS.put,
 
     -- * Error messages
     parseError,
@@ -45,9 +49,7 @@ module Control.Proxy.Parse.Commit (
     setError,
     (<?>),
 
-    -- * Parse exception
-    ParseFailure(..),
-
+-}
     -- * Run functions
     evalParseP,
     evalParseK,
@@ -55,6 +57,7 @@ module Control.Proxy.Parse.Commit (
     -- * End of input utilities
     only,
     onlyK,
+{-
     just,
     justK,
 
@@ -63,6 +66,7 @@ module Control.Proxy.Parse.Commit (
     module Control.Applicative,
     module Control.Monad,
     module Control.Proxy.Trans.Either
+-}
     ) where
 
 import Control.Applicative (
@@ -70,145 +74,193 @@ import Control.Applicative (
 import Control.Exception (SomeException, Exception, toException)
 import qualified Control.Proxy as P
 import Control.Proxy ((>>~))
-import Control.Proxy.Parse.Internal (
-    ParseP(ParseP, unParseP), only, onlyK, just, justK)
+import Control.Proxy.Parse.Internal (ParseP(ParseP, unParseP), get, put, throw)
 import Control.Proxy.Trans.Codensity (runCodensityP)
-import Control.Proxy.Trans.Either (runEitherP, runEitherK)
 import qualified Control.Proxy.Trans.Either as E
-import Control.Proxy.Trans.State (StateP(StateP, unStateP), evalStateP)
+import qualified Control.Proxy.Trans.State as S
 import Data.Maybe (isJust, isNothing)
-import qualified Data.Sequence as S
-import Data.Sequence (ViewL((:<)), (<|), (|>), (><))
 import Data.Typeable (Typeable)
 
 -- For re-exports
 import Control.Applicative ((<$>), (<$), (<**>), optional)
 import Control.Monad (
-    replicateM_, MonadPlus(mzero, mplus), msum, mfilter, guard )
+    replicateM, replicateM_, MonadPlus(mzero, mplus), msum, mfilter, guard )
+
+-- | Parsing failed.  The 'String' describes the nature of the parse failure.
+newtype ParseFailure = ParseFailure String deriving (Show, Typeable)
+
+instance Exception ParseFailure
 
 -- | Request a single element
-draw :: (Monad m, P.Proxy p) => P.Consumer (ParseP a p) (Maybe a) m a
-draw = ParseP (StateP (\s -> E.EitherP (case S.viewl s of
-    S.EmptyL -> do
-        ma <- P.request ()
-        return (case ma of
-            Nothing -> Left "draw: End of input"
-            Just a  -> Right (a, s) )
-    ma:<mas  -> return (case ma of
-        Nothing -> Left "draw: End of input"
-        Just a  -> Right (a, mas) ) )))
+draw :: (Monad m, P.Proxy p) => P.Pipe (ParseP a p) (Maybe a) b m a
+draw = do
+    s <- get
+    case s of
+        []     -> do
+            ma <- P.request ()
+            case ma of
+                Nothing -> err
+                Just a  -> return a
+        ma:mas -> case ma of
+            Nothing -> err
+            Just a  -> do
+                put mas
+                return a
+  where
+    err = throw (ParseFailure "draw: End of input")
 {-# INLINABLE draw #-}
 
 -- | Skip a single element
-skip :: (Monad m, P.Proxy p) => P.Consumer (ParseP a p) (Maybe a) m ()
-skip = ParseP (StateP (\s -> E.EitherP (case S.viewl s of
-    S.EmptyL -> do
-        ma <- P.request ()
-        return (case ma of
-            Nothing -> Left "skip: End of input"
-            Just _  -> Right ((), s) )
-    ma:<mas  -> return (case ma of
-        Nothing -> Left "skip: End of input"
-        Just _  -> return ((), mas) ) )))
+skip :: (Monad m, P.Proxy p) => P.Pipe (ParseP a p) (Maybe a) b m ()
+skip = do
+    s <- get
+    case s of
+        []     -> do
+            ma <- P.request ()
+            case ma of
+                Nothing -> err
+                Just _  -> return ()
+        ma:mas -> case ma of
+            Nothing -> err
+            Just _  -> put mas
+  where
+    err = throw (ParseFailure "skip: End of input")
 {-# INLINABLE skip #-}
 
 -- | Request a single element that must satisfy the predicate
 drawIf
     :: (Monad m, P.Proxy p)
-    => (a -> Bool) -> P.Consumer (ParseP a p) (Maybe a) m a
-drawIf pred = ParseP (StateP (\s -> E.EitherP (case S.viewl s of
-    S.EmptyL -> do
-        ma <- P.request ()
-        return (case ma of
-            Nothing -> Left "drawIf: End of input"
-            Just a  ->
-                if (pred a)
-                    then Right (a, s)
-                    else Left "drawIf: Element failed predicate" )
-    ma:<mas  -> return (case ma of
-        Nothing -> Left "drawIf: End of input"
-        Just a  ->
-            if (pred a)
-                then Right (a, mas)
-                else Left "drawIf: Element failed predicate" ) )))
+    => (a -> Bool) -> P.Pipe (ParseP a p) (Maybe a) b m a
+drawIf pred = do
+    s <- get
+    case s of
+        []     -> do
+            ma <- P.request ()
+            case ma of
+                Nothing -> err0
+                Just a  -> if (pred a) then return a else err1
+        ma:mas -> do
+            ma <- P.request ()
+            case ma of
+                Nothing -> err0
+                Just a  -> if (pred a)
+                    then do
+                        put mas
+                        return a
+                    else err1
+  where
+    err0 = throw (ParseFailure "drawIf: End of input")
+    err1 = throw (ParseFailure "drawIf: Element failed predicate")
 {-# INLINABLE drawIf #-}
 
 -- | Skip a single element that must satisfy the predicate
 skipIf
     :: (Monad m, P.Proxy p)
-    => (a -> Bool) -> P.Consumer (ParseP a p) (Maybe a) m ()
-skipIf pred = ParseP (StateP (\s -> E.EitherP (case S.viewl s of
-    S.EmptyL -> do
-        ma <- P.request ()
-        return (case ma of
-            Nothing -> Left "skipIf: End of input"
-            Just a  ->
-                if (pred a)
-                then Right ((), s)
-                else Left "skipIf: Element failed predicate" )
-    ma:<mas  -> return (case ma of
-        Nothing -> Left "skipIf: End of input"
-        Just a  ->
-            if (pred a)
-                then Right ((), mas)
-                else Left "skipIf: Element failed predicate" ) )))
+    => (a -> Bool) -> P.Pipe (ParseP a p) (Maybe a) b m ()
+skipIf pred = do
+    s <- get
+    case s of
+        []     -> do
+            ma <- P.request ()
+            case ma of
+                Nothing -> err0
+                Just a  -> if (pred a) then return () else err1
+        ma:mas -> case ma of
+            Nothing -> err0
+            Just a  -> put mas
+  where
+    err0 = throw (ParseFailure "skipIf: End of input")
+    err1 = throw (ParseFailure "skipIf: Elemented failed predicate")
 {-# INLINABLE skipIf #-}
 
 -- | Request a fixed number of elements
-drawN
-    :: (Monad m, P.Proxy p) => Int -> P.Consumer (ParseP a p) (Maybe a) m [a]
-drawN n0 = ParseP (StateP (\s0 -> E.EitherP (go0 id s0 n0))) where
-    go0 diffAs s n = if (n > 0)
-        then case S.viewl s of
-            S.EmptyL -> go1 diffAs n
-            ma:<mas  -> case ma of
-                Nothing -> return (Left (err n))
-                Just a  -> go0 (diffAs . (a:)) mas $! (n - 1)
-        else return (Right (diffAs [], s))
+drawN :: (Monad m, P.Proxy p) => Int -> P.Pipe (ParseP a p) (Maybe a) b m [a]
+drawN n0 = go0 id n0
+  where
+    go0 diffAs n = if (n > 0)
+        then do
+            s <- get
+            case s of
+                []     -> go1 diffAs n
+                ma:mas -> case ma of
+                    Nothing -> err n
+                    Just a  -> do
+                        put mas
+                        go0 (diffAs . (a:)) $! n - 1
+        else return (diffAs [])
     go1 diffAs n = if (n > 0)
         then do
             ma <- P.request ()
             case ma of
-                Nothing -> return (Left (err n))
-                Just a  -> go1 (diffAs . (a:)) $! (n - 1)
-        else return (Right (diffAs [], S.empty))
-    err nLeft = "drawN " ++ show n0 ++ ": Found only " ++ show (n0 - nLeft)
-             ++ " elements"
+                Nothing -> err n
+                Just a  -> go1 (diffAs . (a:)) $! n - 1
+         else return (diffAs [])
+    err nLeft = throw (ParseFailure (
+        "drawN " ++ show n0 ++ ": Found only " ++ show (n0 - nLeft)
+     ++ " elements" ))
 {-# INLINABLE drawN #-}
 
 {-| Skip a fixed number of elements
 
     Faster than 'drawN' if you don't need the input
 -}
-skipN
-    :: (Monad m, P.Proxy p) => Int -> P.Consumer (ParseP a p) (Maybe a) m ()
-skipN n0 = ParseP (StateP (\s0 -> E.EitherP (go0 s0 n0))) where
-    go0 s n = if (n > 0)
-        then case S.viewl s of
-            S.EmptyL -> go1 n
-            ma:<mas  -> case ma of
-                Nothing -> return (Left (err n))
-                Just _  -> go0 mas $! (n - 1)
-        else return (Right ((), s))
+skipN :: (Monad m, P.Proxy p) => Int -> P.Pipe (ParseP a p) (Maybe a) b m ()
+skipN n0 = go0 n0
+  where
+    go0 n = if (n > 0)
+        then do
+            s <- get
+            case s of
+                []     -> go1 n
+                ma:mas -> case ma of
+                    Nothing -> err n
+                    Just _  -> go0 $! n - 1
+        else return ()
     go1 n = if (n > 0)
         then do
             ma <- P.request ()
             case ma of
-                Nothing -> return (Left (err n))
-                Just _  -> go1 $! (n - 1)
-        else return (Right ((), S.empty))
-    err nLeft = "skipN " ++ show n0 ++ ": Found only " ++ show (n0 - nLeft)
-             ++ " elements"
+                Nothing -> err n
+                Just _  -> go1 $! n - 1
+        else return ()
+    err nLeft = throw (ParseFailure (
+        "skipN " ++ show n0 ++ ": Found only " ++ show (n0 - nLeft)
+     ++ " elements" ))
 {-# INLINABLE skipN #-}
 
 -- | Request as many consecutive elements satisfying a predicate as possible
 drawWhile
     :: (Monad m, P.Proxy p)
-    => (a -> Bool) -> P.Consumer (ParseP a p) (Maybe a) m [a]
-drawWhile pred = ParseP (StateP (\s0 -> E.EitherP (go0 id s0)))
+    => (a -> Bool) -> P.Pipe (ParseP a p) (Maybe a) b m [a]
+drawWhile pred = go0 id
   where
-    go0 diffAs s = case S.viewl s of
-        S.EmptyL -> go1 diffAs
+    go0 diffAs = do
+        s <- get
+        case s of
+            []     -> go1 diffAs
+            ma:mas -> case ma of
+                Nothing -> return (diffAs [])
+                Just a  -> if (pred a)
+                    then do
+                        put mas
+                        go0 (diffAs . (a:))
+                    else return (diffAs [])
+    go1 diffAs = do
+        ma <- P.request ()
+        case ma of
+            Nothing -> do
+                put [ma]
+                return (diffAs [])
+            Just a  -> if (pred a)
+                then go1 (diffAs . (a:))
+                else do
+                    put [ma]
+                    return (diffAs [])
+{-
+drawWhile pred = ParseP (S.StateP (\s0 -> E.EitherP (go0 id s0)))
+  where
+    go0 diffAs s = case s of
+        [] -> go1 diffAs
         ma:<mas  -> case ma of
             Nothing -> return (Right (diffAs [], s))
             Just a  ->
@@ -223,8 +275,10 @@ drawWhile pred = ParseP (StateP (\s0 -> E.EitherP (go0 id s0)))
                 if (pred a)
                     then go1 (diffAs . (a:))
                     else return (Right (diffAs [], S.singleton ma))
+-}
 {-# INLINABLE drawWhile #-}
 
+{-
 {-| Request as many consecutive elements satisfying a predicate as possible
 
     Faster than 'drawWhile' if you don't need the input
@@ -395,21 +449,21 @@ parseWhile pred p = do
 {-# INLINABLE parseWhile #-}
 
 -- | Match end of input without consuming it
-endOfInput :: (Monad m, P.Proxy p) => P.Consumer (ParseP a p) (Maybe a) m ()
-endOfInput = ParseP (StateP (\s -> E.EitherP (case S.viewl s of
+endOfInS.put :: (Monad m, P.Proxy p) => P.Consumer (ParseP a p) (Maybe a) m ()
+endOfInS.put = ParseP (StateP (\s -> E.EitherP (case S.viewl s of
     S.EmptyL -> do
         ma <- P.request ()
         return (case ma of
             Nothing -> Right ((), S.singleton ma)
-            Just a  -> Left "endOfInput: Not end of input" )
+            Just a  -> Left "endOfInS.put: Not end of input" )
     ma:<mas  -> return (case ma of
         Nothing -> Right ((), s)
-        Just a  -> Left "endOfInput: Not end of input" ) )))
-{-# INLINABLE endOfInput #-}
+        Just a  -> Left "endOfInS.put: Not end of input" ) )))
+{-# INLINABLE endOfInS.put #-}
 
 -- | Return whether cursor is at end of input
-isEndOfInput :: (Monad m, P.Proxy p) => P.Consumer (ParseP a p) (Maybe a) m Bool
-isEndOfInput = ParseP (StateP (\s -> E.EitherP (case S.viewl s of
+isEndOfInS.put :: (Monad m, P.Proxy p) => P.Consumer (ParseP a p) (Maybe a) m Bool
+isEndOfInS.put = ParseP (StateP (\s -> E.EitherP (case S.viewl s of
     S.EmptyL -> do
         ma <- P.request ()
         return (Right (case ma of
@@ -418,7 +472,7 @@ isEndOfInput = ParseP (StateP (\s -> E.EitherP (case S.viewl s of
     ma:<mas  -> return (Right (case ma of
         Nothing -> True
         _       -> False , mas )) )))
-{-# INLINABLE isEndOfInput #-}
+{-# INLINABLE isEndOfInS.put #-}
 
 -- | Emit a diagnostic message and abort parsing
 parseError
@@ -458,11 +512,7 @@ p <?> str= setError str p
 {-# INLINABLE (<?>) #-}
 
 infixl 0 <?>
-
--- | Parsing failed.  The 'String' describes the nature of the parse failure.
-newtype ParseFailure = ParseFailure String deriving (Show, Typeable)
-
-instance Exception ParseFailure
+-}
 
 {-| Evaluate a non-backtracking parser, returning the result or failing with a
     'ParseFailure' exception.
@@ -471,8 +521,7 @@ evalParseP
     :: (Monad m, P.Proxy p)
     => ParseP i p a' a b' b m r
     -> E.EitherP SomeException p a' a b' b m r
-evalParseP p = E.EitherP (runCodensityP (runEitherP (
-    E.fmapL (toException . ParseFailure) (evalStateP S.empty (unParseP p)))))
+evalParseP p = S.evalStateP [] (unParseP p)
 
 {-| Evaluate a non-backtracking parser \'@K@\'leisli arrow, returning the result
     or failing with a 'ParseFailure' exception.
@@ -492,4 +541,55 @@ evalParseK k q = evalParseP (k q)
 
     @Control.Monad.Trans.Either@ exports run functions for the 'E.EitherP' proxy
     transformer.
+-}
+
+-- | Wrap a proxy's outS.put in 'Just' and finish with a 'Nothing'
+only :: (Monad m, P.Proxy p) => p a' a b' b m r -> p a' a b' (Maybe b) m r
+only p = P.runIdentityP (do
+    r <- P.IdentityP p >>~ wrap
+    P.respond Nothing
+    return r )
+  where
+    wrap a = do
+        a' <- P.respond (Just a)
+        a2 <- P.request a'
+        wrap a2
+{-# INLINABLE only #-}
+
+{-| Wrap a proxy \'@K@\'leisli arrow's outS.put in 'Just' and finish with a
+    'Nothing'
+-}
+onlyK
+    :: (Monad m, P.Proxy p)
+    => (q -> p a' a b' b m r) -> (q -> p a' a b' (Maybe b) m r)
+onlyK k q = only (k q)
+{-# INLINABLE onlyK #-}
+
+{-
+{-| Upgrade a proxy to work with 'Maybe's
+
+    The upgraded proxy handles 'Just's and auto-forwards 'Nothing's
+-}
+just :: (Monad m, P.ListT p) => p x a x b m r -> p x (Maybe a) x (Maybe b) m r
+just p = P.runIdentityP (up >\\ (P.IdentityP p //> dn))
+  where
+    dn b = P.respond (Just b)
+    up x = do
+        ma <- P.request x
+        case ma of
+            Nothing -> do
+                x2 <- P.respond Nothing
+                up x2
+            Just a  -> return a
+{-# INLINABLE just #-}
+
+{-| Upgrade a proxy \'@K@\'leisli arrow to work with 'Maybe's
+
+    The upgraded proxy handles 'Just's and auto-forwards 'Nothing's
+-}
+justK
+    :: (Monad m, P.ListT p)
+    => (q -> p x a x b m r) -> (q -> p x (Maybe a) x (Maybe b) m r)
+justK k q = just (k q)
+{-# INLINABLE justK #-}
 -}

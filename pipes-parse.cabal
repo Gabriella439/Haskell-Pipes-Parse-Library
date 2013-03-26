@@ -1,6 +1,6 @@
 Name: pipes-parse
 Version: 1.0.0
-Cabal-Version: >=1.14.0
+Cabal-Version: >=1.8.0.2
 Build-Type: Simple
 License: BSD3
 License-File: LICENSE
@@ -19,12 +19,8 @@ Source-Repository head
 Library
     Build-Depends:
         base         >= 4       && < 5  ,
-        containers   >= 0.3.0.0 && < 0.6,
         pipes        >= 3.2.0   && < 3.3,
         transformers >= 0.2.0.0 && < 0.4
     Exposed-Modules:
-        Control.Proxy.Parse.Backtrack,
-        Control.Proxy.Parse.Commit,
-        Control.Proxy.Parse.Internal,
-        Control.Proxy.String.Backtrack
-    Default-Language: Haskell98
+        Control.Proxy.Parse,
+        Control.Proxy.Parse.Internal
