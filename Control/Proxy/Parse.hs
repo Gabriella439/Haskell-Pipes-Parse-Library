@@ -99,6 +99,10 @@ justP p = P.runIdentityP (up >\\ (P.IdentityP p //> dn))
 {-| Upgrade a proxy \'@K@\'leisli arrow to work with 'Maybe's
 
     The upgraded proxy handles 'Just's and auto-forwards 'Nothing's
+
+> justK p1 >-> justK p2 = justK (p1 >-> p2)
+>
+> justK idT = idT
 -}
 justK
     :: (Monad m, P.ListT p)

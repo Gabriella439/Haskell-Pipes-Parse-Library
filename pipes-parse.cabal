@@ -8,8 +8,22 @@ Copyright: 2013 Gabriel Gonzalez
 Author: Gabriel Gonzalez
 Maintainer: Gabriel439@gmail.com
 Bug-Reports: https://github.com/Gabriel439/Haskell-Pipes-Parse-Library/issues
-Synopsis: Parsing for the pipes ecosystem
-Description: This package defines the core machinery for parsing using @pipes@.
+Synopsis: Parsing infrastructure for the pipes ecosystem
+Description: This package defines the generic machinery necessary for common
+    parsing tasks using @pipes@:
+    .
+    * /End of input/: Abstract over tedious end-of-input checks
+    .
+    * /Push-back/: Save unused input for later steps
+    .
+    * /Generic parsers/: Use datatype-agnostic parsers for common tasks
+    .
+    * /Compatibility/: Upgrade any proxy to interoperate with @pipes-parse@
+      machinery
+    .
+    Import @Control.Proxy.Parse@ to use this library.
+    .
+    Read @Control.Proxy.Parse.Tutorial@ for an introductory tutorial.
 Category: Control, Pipes, Proxies, Parsing
 Tested-With: GHC ==7.4.1
 Source-Repository head
