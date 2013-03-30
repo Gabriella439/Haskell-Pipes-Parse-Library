@@ -14,10 +14,8 @@ module Control.Proxy.Parse.Internal (
 import Control.Applicative (Applicative(pure, (<*>)))
 import Control.Monad.IO.Class(MonadIO(liftIO))
 import Control.Monad.Trans.Class(MonadTrans(lift))
-import Control.Exception (SomeException, Exception, toException)
 import qualified Control.Proxy as P
 import Control.Proxy ((->>), (>>~), (?>=))
-import qualified Control.Proxy.Trans.Either as E
 import qualified Control.Proxy.Trans.State as S
 
 {-| Use 'ParseP' for non-backtracking parsing if you want to:
