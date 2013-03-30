@@ -1,6 +1,6 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 
--- | This module provides utilities for handling push-back and end of input.
+-- | This module provides utilities for handling end of input and push-back
 module Control.Proxy.Parse (
     -- * End of input utilities
     onlyP,
