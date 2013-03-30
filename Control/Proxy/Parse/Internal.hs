@@ -9,7 +9,6 @@ module Control.Proxy.Parse.Internal (
     -- * Utilities
     get,
     put,
-    throw,
     ) where
 
 import Control.Applicative (Applicative(pure, (<*>)))
@@ -32,8 +31,7 @@ import qualified Control.Proxy.Trans.State as S
     * interleave side effects with parsing.
 -}
 newtype ParseP i p a' a b' b m r =
-    ParseP { unParseP ::
-        S.StateP [Maybe i] (E.EitherP SomeException p) a' a b' b m r }
+    ParseP { unParseP :: S.StateP [Maybe i] p a' a b' b m r }
 
 -- Deriving Functor
 instance (P.Proxy p, Monad m) => Functor (ParseP i p a' a b' b m) where
@@ -81,10 +79,10 @@ instance (P.Proxy p) => P.Proxy (ParseP i p) where
     respond = \b  -> ParseP (P.respond b )
 
 instance P.ProxyTrans (ParseP i) where
-    liftP p = ParseP (P.liftP (P.liftP p))
+    liftP p = ParseP (P.liftP p)
 
 instance P.PFunctor (ParseP i) where
-    hoistP nat p = ParseP (P.hoistP (P.hoistP nat) (unParseP p))
+    hoistP nat p = ParseP (P.hoistP nat (unParseP p))
 
 -- | Get the internal leftovers buffer
 get :: (Monad m, P.Proxy p) => ParseP i p a' a b' b m [Maybe i]
@@ -95,8 +93,3 @@ get = ParseP S.get
 put :: (Monad m, P.Proxy p) => [Maybe i] -> ParseP i p a' a b' b m ()
 put s = ParseP (S.put s)
 {-# INLINABLE put #-}
-
--- | Fail parsing by throwing an 'Exception'
-throw :: (Exception e, Monad m, P.Proxy p) => e -> ParseP i p a' a b' b m r
-throw e = ParseP (P.liftP (E.throw (toException e)))
-{-# INLINABLE throw #-}
