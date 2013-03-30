@@ -24,8 +24,6 @@ import qualified Control.Proxy.Trans.State as S
 
     * stream input in as little memory as possible,
 
-    * diagnose parse failures with error messages,
-
     * parse input lazily and incrementally, and
 
     * interleave side effects with parsing.
