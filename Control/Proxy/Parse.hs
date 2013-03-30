@@ -304,7 +304,7 @@ runParseK k q = runParseP (k q)
 {-# INLINABLE runParseK #-}
 
 {- $reexport
-    @Control.Monad.Trans.Either@ exports run functions for the 'E.EitherP' proxy
+    @Control.Proxy.Trans.Either@ exports run functions for the 'E.EitherP' proxy
     transformer.
 -}
 
