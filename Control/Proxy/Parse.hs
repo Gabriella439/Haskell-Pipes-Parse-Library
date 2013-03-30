@@ -2,7 +2,7 @@
 
 -- | This module defines the core machinery handling push-back and end of input.
 module Control.Proxy.Parse (
-    -- * Non-backtracking parser
+    -- * Non-backtracking parsing proxy transformer
     ParseP,
 
     -- * Parse exception
@@ -55,7 +55,6 @@ import Control.Exception (SomeException, Exception, toException, fromException)
 import qualified Control.Proxy as P
 import Control.Proxy ((>>~), (//>), (>\\))
 import Control.Proxy.Parse.Internal (ParseP(ParseP, unParseP), get, put, throw)
-import Control.Proxy.Trans.Codensity (runCodensityP)
 import qualified Control.Proxy.Trans.Either as E
 import Control.Proxy.Trans.Either (runEitherP, runEitherK)
 import qualified Control.Proxy.Trans.State as S
@@ -290,6 +289,7 @@ evalParseP
     => ParseP i p a' a b' b m r
     -> E.EitherP SomeException p a' a b' b m r
 evalParseP p = S.evalStateP [] (unParseP p)
+{-# INLINABLE evalParseP #-}
 
 {-| Evaluate a non-backtracking parser \'@K@\'leisli arrow, returning the result
     or failing with a 'ParseFailure' exception.
@@ -299,6 +299,7 @@ evalParseK
     => (q -> ParseP i p a' a b' b m r)
     -> (q -> E.EitherP SomeException p a' a b' b m r)
 evalParseK k q = evalParseP (k q)
+{-# INLINABLE evalParseK #-}
 
 {- $reexport
     @Control.Monad.Trans.Either@ exports run functions for the 'E.EitherP' proxy
