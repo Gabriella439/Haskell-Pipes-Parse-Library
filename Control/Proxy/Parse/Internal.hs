@@ -18,13 +18,11 @@ import qualified Control.Proxy as P
 import Control.Proxy ((->>), (>>~), (?>=))
 import qualified Control.Proxy.Trans.State as S
 
-{-| Use 'ParseP' for non-backtracking parsing if you want to:
+{-| Use 'ParseP' to :
 
-    * stream input in as little memory as possible,
+    * abstract over end-of-input checks, and
 
-    * parse input lazily and incrementally, and
-
-    * interleave side effects with parsing.
+    * push back unused input.
 -}
 newtype ParseP i p a' a b' b m r =
     ParseP { unParseP :: S.StateP [Maybe i] p a' a b' b m r }

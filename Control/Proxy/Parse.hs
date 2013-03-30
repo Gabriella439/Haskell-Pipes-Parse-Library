@@ -1,12 +1,17 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 
--- | This module defines the core machinery handling push-back and end of input.
+-- | This module provides utilities for handling push-back and end of input.
 module Control.Proxy.Parse (
-    -- * Non-backtracking parsing proxy transformer
-    ParseP,
+    -- * End of input utilities
+    onlyP,
+    onlyK,
+    justP,
+    justK,
 
-    -- * Parse exception
-    ParseFailure(..),
+    -- * Parsing proxy transformer
+    ParseP,
+    runParseP,
+    runParseK,
 
     -- * Primitive parsers
     drawMay,
@@ -32,17 +37,11 @@ module Control.Proxy.Parse (
     isEndOfInput,
 
     -- * Error messages
+    parseFail,
     (<??>),
 
-    -- * Run functions
-    runParseP,
-    runParseK,
-
-    -- * End of input utilities
-    onlyP,
-    onlyK,
-    justP,
-    justK,
+    -- * Parse exception
+    ParseFailure(..),
 
     -- * Re-exports
     -- $reexport
@@ -58,10 +57,70 @@ import Control.Proxy.Trans.Either (runEitherP, runEitherK)
 import qualified Control.Proxy.Trans.State as S
 import Data.Typeable (Typeable)
 
--- | Parsing failed.  The 'String' describes the nature of the parse failure.
-newtype ParseFailure = ParseFailure String deriving (Show, Typeable)
+-- | Wrap a proxy's output in 'Just' and finish with a 'Nothing'
+onlyP :: (Monad m, P.Proxy p) => p a' a b' b m r -> p a' a b' (Maybe b) m r
+onlyP p = P.runIdentityP (do
+    r <- P.IdentityP p >>~ wrap
+    P.respond Nothing
+    return r )
+  where
+    wrap a = do
+        a' <- P.respond (Just a)
+        a2 <- P.request a'
+        wrap a2
+{-# INLINABLE onlyP #-}
 
-instance Exception ParseFailure
+{-| Wrap a proxy \'@K@\'leisli arrow's output in 'Just' and finish with a
+    'Nothing'
+-}
+onlyK
+    :: (Monad m, P.Proxy p)
+    => (q -> p a' a b' b m r) -> (q -> p a' a b' (Maybe b) m r)
+onlyK k q = onlyP (k q)
+{-# INLINABLE onlyK #-}
+
+{-| Upgrade a proxy to work with 'Maybe's
+
+    The upgraded proxy handles 'Just's and auto-forwards 'Nothing's
+-}
+justP :: (Monad m, P.ListT p) => p x a x b m r -> p x (Maybe a) x (Maybe b) m r
+justP p = P.runIdentityP (up >\\ (P.IdentityP p //> dn))
+  where
+    dn b = P.respond (Just b)
+    up x = do
+        ma <- P.request x
+        case ma of
+            Nothing -> do
+                x2 <- P.respond Nothing
+                up x2
+            Just a  -> return a
+{-# INLINABLE justP #-}
+
+{-| Upgrade a proxy \'@K@\'leisli arrow to work with 'Maybe's
+
+    The upgraded proxy handles 'Just's and auto-forwards 'Nothing's
+-}
+justK
+    :: (Monad m, P.ListT p)
+    => (q -> p x a x b m r) -> (q -> p x (Maybe a) x (Maybe b) m r)
+justK k q = justP (k q)
+{-# INLINABLE justK #-}
+
+{-| Evaluate a non-backtracking parser, returning the result or failing with a
+    'ParseFailure' exception.
+-}
+runParseP :: (Monad m, P.Proxy p) => ParseP i p a' a b' b m r -> p a' a b' b m r
+runParseP p = S.evalStateP [] (unParseP p)
+{-# INLINABLE runParseP #-}
+
+{-| Evaluate a non-backtracking parser \'@K@\'leisli arrow, returning the result
+    or failing with a 'ParseFailure' exception.
+-}
+runParseK
+    :: (Monad m, P.Proxy p)
+    => (q -> ParseP i p a' a b' b m r) -> (q -> p a' a b' b m r)
+runParseK k q = runParseP (k q)
+{-# INLINABLE runParseK #-}
 
 -- | Request 'Just' one element or 'Nothing' if at end of input
 drawMay :: (Monad m, P.Proxy p) => P.Pipe (ParseP a p) (Maybe a) b m (Maybe a)
@@ -95,7 +154,7 @@ draw
 draw = do
     ma <- drawMay
     case ma of
-        Nothing -> throwStr "draw: End of input"
+        Nothing -> parseFail "draw: End of input"
         Just a  -> return a
 {-# INLINABLE draw #-}
 
@@ -106,7 +165,7 @@ skip
 skip = do
     ma <- drawMay
     case ma of
-        Nothing -> throwStr "skip: End of input"
+        Nothing -> parseFail "skip: End of input"
         Just _  -> return ()
 {-# INLINABLE skip #-}
 
@@ -118,10 +177,10 @@ drawIf
 drawIf pred = do
     ma <- drawMay
     case ma of
-        Nothing -> throwStr "drawIf: End of input"
+        Nothing -> parseFail "drawIf: End of input"
         Just a  -> if (pred a)
             then return a
-            else throwStr "drawIf: Element failed predicate"
+            else parseFail "drawIf: Element failed predicate"
 {-# INLINABLE drawIf #-}
 
 -- | Skip a single element that must satisfy the predicate
@@ -132,10 +191,10 @@ skipIf
 skipIf pred = do
     ma <- drawMay
     case ma of
-        Nothing -> throwStr "skipIf: End of input"
+        Nothing -> parseFail "skipIf: End of input"
         Just a  -> if (pred a)
             then return ()
-            else throwStr "skipIf: Elemented failed predicate"
+            else parseFail "skipIf: Elemented failed predicate"
 {-# INLINABLE skipIf #-}
 
 -- | Look ahead one element without consuming it
@@ -158,7 +217,7 @@ drawN n0 = go id n0 where
         then do
             ma <- drawMay
             case ma of
-                Nothing -> throwStr (
+                Nothing -> parseFail (
                     "drawN " ++ show n0 ++ ": Found only " ++ show (n0 - n)
                  ++ " elements" )
                 Just a  -> go (diffAs . (a:)) $! n - 1
@@ -178,7 +237,7 @@ skipN n0 = go n0
         then do
             ma <- drawMay
             case ma of
-                Nothing -> throwStr (
+                Nothing -> parseFail (
                     "skipN " ++ show n0 ++ ": Found only " ++ show (n0 - n)
                  ++ " elements" )
                 Just _  -> go $! n - 1
@@ -251,7 +310,7 @@ endOfInput
     => P.Pipe (ParseP a (E.EitherP SomeException p)) (Maybe a) b m ()
 endOfInput = do
     b <- isEndOfInput
-    if b then return () else throwStr "endOfInput: Not end of input"
+    if b then return () else parseFail "endOfInput: Not end of input"
 {-# INLINABLE endOfInput #-}
 
 -- | Return whether cursor is at end of input
@@ -263,20 +322,20 @@ isEndOfInput = do
         _       -> False )
 {-# INLINABLE isEndOfInput #-}
 
--- | Emit a diagnostic message and abort parsing
-throwStr
+-- | Fail parsing with a 'String' error message
+parseFail
     :: (Monad m, P.Proxy p)
     => String -> P.Pipe (ParseP a (E.EitherP SomeException p)) (Maybe a) b m r
-throwStr str = P.liftP (E.throw (toException (ParseFailure str)))
-{-# INLINABLE throwStr #-}
+parseFail str = P.liftP (E.throw (toException (ParseFailure str)))
+{-# INLINABLE parseFail #-}
 
--- | Override error message
+-- | Override an existing parser's error message with a new one
 (<??>)
     :: (Monad m, P.Proxy p)
     => P.Pipe (ParseP a (E.EitherP SomeException p)) (Maybe a) b m r
        -- ^ Parser to modify
     -> String
-       -- ^ New default error message
+       -- ^ New error message
     -> P.Pipe (ParseP a (E.EitherP SomeException p)) (Maybe a) b m r
 p <??> str= P.hoistP
     (E.handle (\exc -> E.throw (case fromException exc of
@@ -287,72 +346,12 @@ p <??> str= P.hoistP
 
 infixl 0 <??>
 
-{-| Evaluate a non-backtracking parser, returning the result or failing with a
-    'ParseFailure' exception.
--}
-runParseP :: (Monad m, P.Proxy p) => ParseP i p a' a b' b m r -> p a' a b' b m r
-runParseP p = S.evalStateP [] (unParseP p)
-{-# INLINABLE runParseP #-}
+-- | Parsing failed.  The 'String' describes the nature of the parse failure.
+newtype ParseFailure = ParseFailure String deriving (Show, Typeable)
 
-{-| Evaluate a non-backtracking parser \'@K@\'leisli arrow, returning the result
-    or failing with a 'ParseFailure' exception.
--}
-runParseK
-    :: (Monad m, P.Proxy p)
-    => (q -> ParseP i p a' a b' b m r) -> (q -> p a' a b' b m r)
-runParseK k q = runParseP (k q)
-{-# INLINABLE runParseK #-}
+instance Exception ParseFailure
 
 {- $reexport
     @Control.Proxy.Trans.Either@ exports run functions for the 'E.EitherP' proxy
     transformer.
 -}
-
--- | Wrap a proxy's output in 'Just' and finish with a 'Nothing'
-onlyP :: (Monad m, P.Proxy p) => p a' a b' b m r -> p a' a b' (Maybe b) m r
-onlyP p = P.runIdentityP (do
-    r <- P.IdentityP p >>~ wrap
-    P.respond Nothing
-    return r )
-  where
-    wrap a = do
-        a' <- P.respond (Just a)
-        a2 <- P.request a'
-        wrap a2
-{-# INLINABLE onlyP #-}
-
-{-| Wrap a proxy \'@K@\'leisli arrow's output in 'Just' and finish with a
-    'Nothing'
--}
-onlyK
-    :: (Monad m, P.Proxy p)
-    => (q -> p a' a b' b m r) -> (q -> p a' a b' (Maybe b) m r)
-onlyK k q = onlyP (k q)
-{-# INLINABLE onlyK #-}
-
-{-| Upgrade a proxy to work with 'Maybe's
-
-    The upgraded proxy handles 'Just's and auto-forwards 'Nothing's
--}
-justP :: (Monad m, P.ListT p) => p x a x b m r -> p x (Maybe a) x (Maybe b) m r
-justP p = P.runIdentityP (up >\\ (P.IdentityP p //> dn))
-  where
-    dn b = P.respond (Just b)
-    up x = do
-        ma <- P.request x
-        case ma of
-            Nothing -> do
-                x2 <- P.respond Nothing
-                up x2
-            Just a  -> return a
-{-# INLINABLE justP #-}
-
-{-| Upgrade a proxy \'@K@\'leisli arrow to work with 'Maybe's
-
-    The upgraded proxy handles 'Just's and auto-forwards 'Nothing's
--}
-justK
-    :: (Monad m, P.ListT p)
-    => (q -> p x a x b m r) -> (q -> p x (Maybe a) x (Maybe b) m r)
-justK k q = justP (k q)
-{-# INLINABLE justK #-}
