@@ -35,6 +35,7 @@ module Control.Proxy.Parse (
     -- * End of input
     endOfInput,
     isEndOfInput,
+    skipEndOfInput,
 
     -- * Error messages
     parseFail,
@@ -55,6 +56,7 @@ import Control.Proxy.Parse.Internal (ParseP(ParseP, unParseP), get, put)
 import qualified Control.Proxy.Trans.Either as E
 import Control.Proxy.Trans.Either (runEitherP, runEitherK)
 import qualified Control.Proxy.Trans.State as S
+import Data.Maybe (isNothing)
 import Data.Typeable (Typeable)
 
 -- | Wrap a proxy's output in 'Just' and finish with a 'Nothing'
@@ -325,6 +327,15 @@ isEndOfInput = do
         Nothing -> True
         _       -> False )
 {-# INLINABLE isEndOfInput #-}
+
+-- | Skip leading end of input
+skipEndOfInput
+    :: (Monad m, P.Proxy p)
+    => P.Pipe (ParseP a (E.EitherP SomeException p)) (Maybe a) b m ()
+skipEndOfInput = do
+   endOfInput
+   put . dropWhile isNothing =<< get
+{-# INLINABLE skipEndOfInput #-}
 
 -- | Fail parsing with a 'String' error message
 parseFail
