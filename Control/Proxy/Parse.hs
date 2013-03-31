@@ -17,24 +17,26 @@ module Control.Proxy.Parse (
     drawMay,
     unDraw,
 
-    -- * Single-element parsers
-    draw,
-    skip,
-    drawIf,
-    skipIf,
-    peek,
-
-    -- * Efficient bulk parsers
-    drawN,
-    skipN,
+    -- * Parsers that cannot fail
+    drawWhen,
+    skipWhen,
+    drawUpToN,
+    skipUpToN,
     drawWhile,
     skipWhile,
     drawAll,
     skipAll,
-
-    -- * End of input
-    endOfInput,
     isEndOfInput,
+    peek,
+
+    -- * Parsers that can fail
+    draw,
+    skip,
+    drawIf,
+    skipIf,
+    drawN,
+    skipN,
+    endOfInput,
 
     -- * Error messages
     parseFail,
@@ -151,102 +153,64 @@ unDraw a = do
     put (Just a:mas)
 {-# INLINABLE unDraw #-}
 
--- | Request a single element
-draw
+-- | Draw an element only when it satisfies the predicate
+drawWhen
     :: (Monad m, P.Proxy p)
-    => P.Pipe (ParseP a (E.EitherP SomeException p)) (Maybe a) b m a
-draw = do
+    => (a -> Bool) -> P.Pipe (ParseP a p) (Maybe a) b m (Maybe a)
+drawWhen pred = do
     ma <- drawMay
     case ma of
-        Nothing -> parseFail "draw: End of input"
-        Just a  -> return a
-{-# INLINABLE draw #-}
-
--- | Skip a single element
-skip
-    :: (Monad m, P.Proxy p)
-    => P.Pipe (ParseP a (E.EitherP SomeException p)) (Maybe a) b m ()
-skip = do
-    ma <- drawMay
-    case ma of
-        Nothing -> parseFail "skip: End of input"
-        Just _  -> return ()
-{-# INLINABLE skip #-}
-
--- | Request a single element that must satisfy the predicate
-drawIf
-    :: (Monad m, P.Proxy p)
-    => (a -> Bool)
-    -> P.Pipe (ParseP a (E.EitherP SomeException p)) (Maybe a) b m a
-drawIf pred = do
-    ma <- drawMay
-    case ma of
-        Nothing -> parseFail "drawIf: End of input"
+        Nothing -> return ma
         Just a  -> if (pred a)
-            then return a
-            else parseFail "drawIf: Element failed predicate"
-{-# INLINABLE drawIf #-}
+            then return ma
+            else do
+                unDraw a
+                return Nothing
+{-# INLINABLE drawWhen #-}
 
--- | Skip a single element that must satisfy the predicate
-skipIf
+-- | Skip an element only when it satisfies the predicate
+skipWhen
     :: (Monad m, P.Proxy p)
-    => (a -> Bool)
-    -> P.Pipe (ParseP a (E.EitherP SomeException p)) (Maybe a) b m ()
-skipIf pred = do
-    ma <- drawMay
-    case ma of
-        Nothing -> parseFail "skipIf: End of input"
-        Just a  -> if (pred a)
-            then return ()
-            else parseFail "skipIf: Elemented failed predicate"
-{-# INLINABLE skipIf #-}
-
--- | Look ahead one element without consuming it
-peek :: (Monad m, P.Proxy p) => P.Pipe (ParseP a p) (Maybe a) b m (Maybe a)
-peek = do
+    => (a -> Bool) -> P.Pipe (ParseP a p) (Maybe a) b m ()
+skipWhen pred = do
     ma <- drawMay
     case ma of
         Nothing -> return ()
-        Just a  -> unDraw a
-    return ma
-{-# INLINABLE peek #-}
+        Just a  -> if (pred a)
+            then return ()
+            else unDraw a
+{-# INLINABLE skipWhen #-}
 
--- | Request a fixed number of elements
-drawN
-    :: (Monad m, P.Proxy p)
-    => Int
-    -> P.Pipe (ParseP a (E.EitherP SomeException p)) (Maybe a) b m [a]
-drawN n0 = go id n0 where
+-- | Draw up to the specified number of elements
+drawUpToN
+    :: (Monad m, P.Proxy p) => Int -> P.Pipe (ParseP a p) (Maybe a) b m [a]
+drawUpToN = go id
+  where
     go diffAs n = if (n > 0)
         then do
             ma <- drawMay
             case ma of
-                Nothing -> parseFail (
-                    "drawN " ++ show n0 ++ ": Found only " ++ show (n0 - n)
-                 ++ " elements" )
+                Nothing -> return (diffAs [])
                 Just a  -> go (diffAs . (a:)) $! n - 1
         else return (diffAs [])
-{-# INLINABLE drawN #-}
+{-# INLINABLE drawUpToN #-}
 
-{-| Skip a fixed number of elements
+{-| Skip up to the specified number of elements
 
-    Faster than 'drawN' if you don't need the input
+    Faster than 'drawUpToN' if you don't need the input
 -}
-skipN
-    :: (Monad m, P.Proxy p)
-    => Int -> P.Pipe (ParseP a (E.EitherP SomeException p)) (Maybe a) b m ()
-skipN n0 = go n0
+skipUpToN
+    :: (Monad m, P.Proxy p) => Int -> P.Pipe (ParseP a p) (Maybe a) b m ()
+skipUpToN = go
   where
     go n = if (n > 0)
         then do
             ma <- drawMay
             case ma of
-                Nothing -> parseFail (
-                    "skipN " ++ show n0 ++ ": Found only " ++ show (n0 - n)
-                 ++ " elements" )
+                Nothing -> return ()
                 Just _  -> go $! n - 1
         else return ()
-{-# INLINABLE skipN #-}
+{-# INLINABLE skipUpToN #-}
 
 -- | Request as many consecutive elements satisfying a predicate as possible
 drawWhile
@@ -308,15 +272,6 @@ skipAll = go
             Just _  -> go
 {-# INLINABLE skipAll #-}
 
--- | Match end of input without consuming it
-endOfInput
-    :: (Monad m, P.Proxy p)
-    => P.Pipe (ParseP a (E.EitherP SomeException p)) (Maybe a) b m ()
-endOfInput = do
-    b <- isEndOfInput
-    if b then return () else parseFail "endOfInput: Not end of input"
-{-# INLINABLE endOfInput #-}
-
 -- | Return whether cursor is at end of input
 isEndOfInput :: (Monad m, P.Proxy p) => P.Pipe (ParseP a p) (Maybe a) b m Bool
 isEndOfInput = do
@@ -325,6 +280,112 @@ isEndOfInput = do
         Nothing -> True
         _       -> False )
 {-# INLINABLE isEndOfInput #-}
+
+-- | Look ahead one element without consuming it
+peek :: (Monad m, P.Proxy p) => P.Pipe (ParseP a p) (Maybe a) b m (Maybe a)
+peek = do
+    ma <- drawMay
+    case ma of
+        Nothing -> return ()
+        Just a  -> unDraw a
+    return ma
+{-# INLINABLE peek #-}
+
+-- | Request a single element
+draw
+    :: (Monad m, P.Proxy p)
+    => P.Pipe (ParseP a (E.EitherP SomeException p)) (Maybe a) b m a
+draw = do
+    ma <- drawMay
+    case ma of
+        Nothing -> parseFail "draw: End of input"
+        Just a  -> return a
+{-# INLINABLE draw #-}
+
+-- | Skip a single element
+skip
+    :: (Monad m, P.Proxy p)
+    => P.Pipe (ParseP a (E.EitherP SomeException p)) (Maybe a) b m ()
+skip = do
+    ma <- drawMay
+    case ma of
+        Nothing -> parseFail "skip: End of input"
+        Just _  -> return ()
+{-# INLINABLE skip #-}
+
+-- | Request a single element that must satisfy the predicate
+drawIf
+    :: (Monad m, P.Proxy p)
+    => (a -> Bool)
+    -> P.Pipe (ParseP a (E.EitherP SomeException p)) (Maybe a) b m a
+drawIf pred = do
+    ma <- drawMay
+    case ma of
+        Nothing -> parseFail "drawIf: End of input"
+        Just a  -> if (pred a)
+            then return a
+            else parseFail "drawIf: Element failed predicate"
+{-# INLINABLE drawIf #-}
+
+-- | Skip a single element that must satisfy the predicate
+skipIf
+    :: (Monad m, P.Proxy p)
+    => (a -> Bool)
+    -> P.Pipe (ParseP a (E.EitherP SomeException p)) (Maybe a) b m ()
+skipIf pred = do
+    ma <- drawMay
+    case ma of
+        Nothing -> parseFail "skipIf: End of input"
+        Just a  -> if (pred a)
+            then return ()
+            else parseFail "skipIf: Elemented failed predicate"
+{-# INLINABLE skipIf #-}
+
+-- | Request a fixed number of elements
+drawN
+    :: (Monad m, P.Proxy p)
+    => Int
+    -> P.Pipe (ParseP a (E.EitherP SomeException p)) (Maybe a) b m [a]
+drawN n0 = go id n0 where
+    go diffAs n = if (n > 0)
+        then do
+            ma <- drawMay
+            case ma of
+                Nothing -> parseFail (
+                    "drawN " ++ show n0 ++ ": Found only " ++ show (n0 - n)
+                 ++ " elements" )
+                Just a  -> go (diffAs . (a:)) $! n - 1
+        else return (diffAs [])
+{-# INLINABLE drawN #-}
+
+{-| Skip a fixed number of elements
+
+    Faster than 'drawN' if you don't need the input
+-}
+skipN
+    :: (Monad m, P.Proxy p)
+    => Int -> P.Pipe (ParseP a (E.EitherP SomeException p)) (Maybe a) b m ()
+skipN n0 = go n0
+  where
+    go n = if (n > 0)
+        then do
+            ma <- drawMay
+            case ma of
+                Nothing -> parseFail (
+                    "skipN " ++ show n0 ++ ": Found only " ++ show (n0 - n)
+                 ++ " elements" )
+                Just _  -> go $! n - 1
+        else return ()
+{-# INLINABLE skipN #-}
+
+-- | Match end of input without consuming it
+endOfInput
+    :: (Monad m, P.Proxy p)
+    => P.Pipe (ParseP a (E.EitherP SomeException p)) (Maybe a) b m ()
+endOfInput = do
+    b <- isEndOfInput
+    if b then return () else parseFail "endOfInput: Not end of input"
+{-# INLINABLE endOfInput #-}
 
 -- | Fail parsing with a 'String' error message
 parseFail
