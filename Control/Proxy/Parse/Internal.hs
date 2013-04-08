@@ -3,87 +3,65 @@
     primitives not implementable in terms of existing primitives.
 -}
 module Control.Proxy.Parse.Internal (
-    -- * Parsing proxy transformer
-    ParseP(..),
+    -- * Parsing monad transformer
+    BufferT(..),
+    runBufferT,
 
     -- * Utilities
     get,
-    put,
+    put
     ) where
 
 import Control.Applicative (Applicative(pure, (<*>)))
+import Control.Monad (liftM, ap)
 import Control.Monad.IO.Class(MonadIO(liftIO))
+import Control.Monad.Morph (MFunctor(hoist))
 import Control.Monad.Trans.Class(MonadTrans(lift))
-import qualified Control.Proxy as P
-import Control.Proxy ((->>), (>>~), (?>=))
-import qualified Control.Proxy.Trans.State as S
+import qualified Control.Monad.Trans.State as S
 
-{-| Use 'ParseP' to :
+{-| Use 'BufferT' to :
 
     * abstract over end-of-input checks, and
 
     * push back unused input.
 -}
-newtype ParseP i p a' a b' b m r =
-    ParseP { unParseP :: S.StateP [Maybe i] p a' a b' b m r }
+newtype BufferT i m r = BufferT { unBufferT :: S.StateT [Maybe i] m r }
 
--- Deriving Functor
-instance (P.Proxy p, Monad m) => Functor (ParseP i p a' a b' b m) where
-    fmap f p = ParseP (fmap f (unParseP p))
+instance (Monad m) => Functor (BufferT i m) where
+    fmap f p = BufferT (liftM f (unBufferT p))
 
--- Deriving Applicative
-instance (P.Proxy p, Monad m) => Applicative (ParseP i p a' a b' b m) where
-    pure r  = ParseP (pure r)
-    f <*> x = ParseP (unParseP f <*> unParseP x)
+instance (Monad m) => Applicative (BufferT i m) where
+    pure r  = BufferT (return r)
+    f <*> x = BufferT (ap (unBufferT f) (unBufferT x))
 
 -- Deriving Monad
-instance (P.Proxy p, Monad m) => Monad (ParseP i p a' a b' b m) where
-    return = P.return_P
-    (>>=)  = (?>=)
+instance (Monad m) => Monad (BufferT i m) where
+    return r = BufferT (return r)
+    m >>= f  = BufferT (unBufferT m >>= \r -> unBufferT (f r))
 
 -- Deriving MonadTrans
-instance (P.Proxy p) => MonadTrans (ParseP i p a' a b' b) where
-    lift = P.lift_P
+instance MonadTrans (BufferT i) where
+    lift m = BufferT (lift m)
 
 -- Deriving MFunctor
-instance (P.Proxy p) => P.MFunctor (ParseP i p a' a b' b) where
-    hoist = P.hoist_P
+instance MFunctor (BufferT i) where
+    hoist nat m = BufferT (hoist nat (unBufferT m))
 
 -- Deriving MonadIO
-instance (MonadIO m, P.Proxy p) => MonadIO (ParseP i p a' a b' b m) where
-    liftIO = P.liftIO_P
+instance (MonadIO m) => MonadIO (BufferT i m) where
+    liftIO m = BufferT (liftIO m)
 
--- Deriving ProxyInternal
-instance (P.Proxy p) => P.ProxyInternal (ParseP i p) where
-    return_P = \r -> ParseP (P.return_P r)
-    m ?>= f  = ParseP (unParseP m ?>= \r -> unParseP (f r))
+-- | Unwrap 'BufferT'
+runBufferT :: (Monad m) => BufferT i m r -> m r
+runBufferT p = S.evalStateT (unBufferT p) []
 
-    lift_P m = ParseP (P.lift_P m)
-
-    hoist_P nat p = ParseP (P.hoist_P nat (unParseP p))
-
-    liftIO_P m = ParseP (P.liftIO_P m)
-
--- Deriving Proxy
-instance (P.Proxy p) => P.Proxy (ParseP i p) where
-    fb' ->> p = ParseP ((\b' -> unParseP (fb' b')) ->> unParseP p)
-    p >>~ fb  = ParseP (unParseP p >>~ (\b -> unParseP (fb b)))
-
-    request = \a' -> ParseP (P.request a')
-    respond = \b  -> ParseP (P.respond b )
-
-instance P.ProxyTrans (ParseP i) where
-    liftP p = ParseP (P.liftP p)
-
-instance P.PFunctor (ParseP i) where
-    hoistP nat p = ParseP (P.hoistP nat (unParseP p))
-
+{-# INLINABLE runBufferT #-}
 -- | Get the internal leftovers buffer
-get :: (Monad m, P.Proxy p) => ParseP i p a' a b' b m [Maybe i]
-get = ParseP S.get
+get :: (Monad m) => BufferT i m [Maybe i]
+get = BufferT S.get
 {-# INLINABLE get #-}
 
 -- | Set the internal leftovers buffer
-put :: (Monad m, P.Proxy p) => [Maybe i] -> ParseP i p a' a b' b m ()
-put s = ParseP (S.put s)
+put :: (Monad m) => [Maybe i] -> BufferT i m ()
+put s = BufferT (S.put s)
 {-# INLINABLE put #-}
