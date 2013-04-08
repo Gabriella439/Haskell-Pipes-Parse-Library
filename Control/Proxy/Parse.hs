@@ -2,7 +2,7 @@
 
 -- | This module provides utilities for handling end of input and push-back
 module Control.Proxy.Parse (
-    -- * Parsing proxy transformer
+    -- * Running parsers
     BufferT,
     runBufferT,
     parseWith,
@@ -16,10 +16,13 @@ module Control.Proxy.Parse (
     skipWhen,
     drawUpToN,
     skipUpToN,
+    passUpToN,
     drawWhile,
     skipWhile,
+    passWhile,
     drawAll,
     skipAll,
+    passAll,
     isEndOfInput,
     peek,
 
@@ -30,6 +33,7 @@ module Control.Proxy.Parse (
     skipIf,
     drawN,
     skipN,
+    passN,
     endOfInput,
 
     -- * Error messages
@@ -54,6 +58,9 @@ import Control.Proxy.Trans.Either (EitherP, runEitherP, runEitherK)
 import qualified Control.Proxy.Trans.State as S
 import Data.Typeable (Typeable)
 
+{-| @(source \`parseWith\` parser)@ uses @(parser)@ to parse the given
+    @(source)@, storing all leftovers in the provided 'BufferT' layer.
+-}
 parseWith
     :: (Monad m, P.Proxy p)
     => (b'  -> p a'        a  b' b (BufferT i m) r)
@@ -158,6 +165,26 @@ skipUpToN n0 = P.runIdentityP (go n0)
         else return ()
 {-# INLINABLE skipUpToN #-}
 
+{-| Pass up to the specified number of elements
+
+    'passUpToN' is a Kleisli arrow suitable as a source for 'parseWith'
+-}
+passUpToN
+    :: (Monad m, P.Proxy p)
+    => Int -> () -> P.Pipe p (Maybe a) a (BufferT a m) ()
+passUpToN n0 () = P.runIdentityP (go n0)
+  where
+    go n = if (n > 0)
+        then do
+            ma <- drawMay
+            case ma of
+                Nothing -> return ()
+                Just a  -> do
+                    P.respond a
+                    go $! n - 1
+        else return ()
+{-# INLINABLE passUpToN #-}
+
 -- | Request as many consecutive elements satisfying a predicate as possible
 drawWhile
     :: (Monad m, P.Proxy p)
@@ -193,6 +220,26 @@ skipWhile pred = P.runIdentityP go
                 else unDraw a
 {-# INLINABLE skipWhile #-}
 
+{-| Pass as many consecutive elements satisfying a predicate as possible
+
+    'passWhile' is a Kleisli arrow suitable as a source for 'parseWith'
+-}
+passWhile
+    :: (Monad m, P.Proxy p)
+    => (a -> Bool) -> () -> P.Pipe p (Maybe a) a (BufferT a m) ()
+passWhile pred () = P.runIdentityP go
+  where
+    go = do
+        ma <- drawMay
+        case ma of
+            Nothing -> return ()
+            Just a  -> if (pred a)
+                then do
+                    P.respond a
+                    go
+                else unDraw a
+{-# INLINABLE passWhile #-}
+
 -- | Request the rest of the input
 drawAll :: (Monad m, P.Proxy p) => P.Pipe p (Maybe a) b (BufferT a m) [a]
 drawAll = P.runIdentityP (go id)
@@ -217,6 +264,22 @@ skipAll = P.runIdentityP go
             Nothing -> return ()
             Just _  -> go
 {-# INLINABLE skipAll #-}
+
+{-| Pass the rest of the input
+
+    'passAll' is a Kleisli arrow suitable as a source for 'parseWith'
+-}
+passAll :: (Monad m, P.Proxy p) => () -> P.Pipe p (Maybe a) a (BufferT a m) ()
+passAll () = P.runIdentityP go
+  where
+    go = do
+        ma <- drawMay
+        case ma of
+            Nothing -> return ()
+            Just a  -> do
+                P.respond a
+                go
+{-# INLINABLE passAll #-}
 
 -- | Return whether cursor is at end of input
 isEndOfInput :: (Monad m, P.Proxy p) => P.Pipe p (Maybe a) b (BufferT a m) Bool
@@ -324,6 +387,27 @@ skipN n0 = go n0
         else return ()
 {-# INLINABLE skipN #-}
 
+{-| Pass a fixed number of elements
+
+    'passN' is a Kleisli arrow suitable as a source for 'parseWith'
+-}
+passN
+    :: (Monad m, P.Proxy p)
+    => Int
+    -> () -> P.Pipe (E.EitherP SomeException p) (Maybe a) a (BufferT a m) ()
+passN n0 () = go n0
+  where
+    go n = if (n > 0)
+        then do
+            ma <- drawMay
+            case ma of
+                Nothing -> parseFail (
+                    "passN " ++ show n0 ++ ": Found only " ++ show (n0 - n)
+                 ++ " elements" )
+                Just _  -> go $! n - 1
+        else return ()
+{-# INLINABLE passN #-}
+
 -- | Match end of input without consuming it
 endOfInput
     :: (Monad m, P.Proxy p)
@@ -333,7 +417,7 @@ endOfInput = do
     if b then return () else parseFail "endOfInput: Not end of input"
 {-# INLINABLE endOfInput #-}
 
--- | Fail parsing with a 'String' error message
+-- | Throw a 'ParseFailure' exception with the given 'String' error message
 parseFail
     :: (Monad m, P.Proxy p)
     => String -> P.Pipe (E.EitherP SomeException p) (Maybe a) b (BufferT a m) r

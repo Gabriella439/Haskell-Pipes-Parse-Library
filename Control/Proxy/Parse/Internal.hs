@@ -19,12 +19,7 @@ import Control.Monad.Morph (MFunctor(hoist))
 import Control.Monad.Trans.Class(MonadTrans(lift))
 import qualified Control.Monad.Trans.State as S
 
-{-| Use 'BufferT' to :
-
-    * abstract over end-of-input checks, and
-
-    * push back unused input.
--}
+-- | 'BufferT' stores leftovers.
 newtype BufferT i m r = BufferT { unBufferT :: S.StateT [Maybe i] m r }
 
 instance (Monad m) => Functor (BufferT i m) where
