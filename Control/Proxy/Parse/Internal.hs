@@ -2,9 +2,13 @@
     future.  I only expose this so that people can write high-efficiency parsing
     primitives not implementable in terms of existing primitives.
 -}
+
+{-# LANGUAGE RankNTypes #-}
+
 module Control.Proxy.Parse.Internal (
     -- * Parsing proxy transformer
     ParseP(..),
+    runParseP,
 
     -- * Utilities
     get,
@@ -14,18 +18,13 @@ module Control.Proxy.Parse.Internal (
 import Control.Applicative (Applicative(pure, (<*>)))
 import Control.Monad.IO.Class(MonadIO(liftIO))
 import Control.Monad.Trans.Class(MonadTrans(lift))
-import Control.Monad.ST (ST)
+import Control.Monad.ST (ST, RealWorld, stToIO)
 import qualified Control.Proxy as P
 import Control.Proxy ((->>), (>>~), (?>=))
-import Data.STRef (STRef, readSTRef, writeSTRef)
-import Control.Proxy.Trans.Reader (ReaderP, ask)
+import Data.STRef (STRef, newSTRef, readSTRef, writeSTRef)
+import Control.Proxy.Trans.Reader (ReaderP, runReaderP, ask)
 
-{-| Use 'ParseP' to :
-
-    * abstract over end-of-input checks, and
-
-    * push back unused input.
--}
+-- | The 'ParseP' proxy transformer stores parsing leftovers
 newtype ParseP s i p a' a b' b m r =
     ParseP { unParseP :: ReaderP (STRef s [Maybe i]) p a' a b' b m r }
 
@@ -79,6 +78,17 @@ instance P.ProxyTrans (ParseP s i) where
 
 instance P.PFunctor (ParseP s i) where
     hoistP nat p = ParseP (P.hoistP nat (unParseP p))
+
+-- | Unwrap a 'ParseP' proxy in the 'ST' monad
+runParseP
+    :: (Monad m, P.Proxy p)
+    => (forall x . p a' a b' b (ST s) x -> p a' a b' b m x)
+    -> ParseP s i p a' a b' b m r
+    ->            p a' a b' b m r
+runParseP morph p =
+    morph (P.lift_P (newSTRef [])) ?>= \ref ->
+    runReaderP ref (unParseP p)
+{-# INLINABLE runParseP #-}
 
 -- | Get the internal leftovers buffer
 get :: (P.Proxy p) => ParseP s i p a' a b' b (ST s) [Maybe i]

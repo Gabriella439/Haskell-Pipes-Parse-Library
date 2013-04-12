@@ -1,17 +1,11 @@
-{-# LANGUAGE DeriveDataTypeable #-}
-
 -- | This module provides utilities for handling end of input and push-back
-module Control.Proxy.Parse (
-    -- * End of input utilities
-    onlyP,
-    onlyK,
-    justP,
-    justK,
 
+{-# LANGUAGE DeriveDataTypeable, RankNTypes #-}
+
+module Control.Proxy.Parse (
     -- * Parsing proxy transformer
     ParseP,
-    runParseP,
-    runParseK,
+    parse,
 
     -- * Primitive parsers
     drawMay,
@@ -47,89 +41,44 @@ module Control.Proxy.Parse (
 
     -- * Re-exports
     -- $reexport
-    module Control.Proxy.Trans.Either
+    module Control.Proxy.Trans.Either,
+    module Control.Monad.ST
     ) where
 
 import Control.Exception (SomeException, Exception, toException, fromException)
+import Control.Monad (forever)
+import Control.Monad.ST (ST, RealWorld, stToIO)
 import qualified Control.Proxy as P
-import Control.Proxy ((>>~), (//>), (>\\))
-import Control.Proxy.Parse.Internal (ParseP(ParseP, unParseP), get, put)
+import Control.Proxy ((>>~), (//>), (>\\), (>->))
+import Control.Proxy.Parse.Internal (ParseP, runParseP, get, put)
 import qualified Control.Proxy.Trans.Either as E
 import Control.Proxy.Trans.Either (runEitherP, runEitherK)
-import qualified Control.Proxy.Trans.State as S
 import Data.Typeable (Typeable)
 
--- | Wrap a proxy's output in 'Just' and finish with a 'Nothing'
-onlyP :: (Monad m, P.Proxy p) => p a' a b' b m r -> p a' a b' (Maybe b) m r
-onlyP p = P.runIdentityP (do
-    r <- P.IdentityP p >>~ wrap
-    P.respond Nothing
-    return r )
+-- | Unwrap 'ParseP' by providing a source
+parse
+    :: (Monad m, P.Proxy p)
+    => (forall x . p b' (Maybe b) c' c (ST s) x -> p b' (Maybe b) c' c  m x)
+    -- ^ Monad morphism
+    -> (b'  ->            p a'        a  b' b m s)
+    -- ^ Original source
+    -> (c'_ -> ParseP s i p b' (Maybe b) c' c m r)
+    -- ^ Parser
+    -> (c'_ ->            p a'        a  c' c m r)
+    -- ^ New source
+parse morph source parser = onlyK source >-> runParseP morph . parser
+
+onlyK k q = P.runIdentityP (do
+    r <- P.IdentityP (k q) >>~ wrap
+    forever $ P.respond Nothing )
   where
     wrap a = do
         a' <- P.respond (Just a)
         a2 <- P.request a'
         wrap a2
-{-# INLINABLE onlyP #-}
-
-{-| Wrap a proxy \'@K@\'leisli arrow's output in 'Just' and finish with a
-    'Nothing'
--}
-onlyK
-    :: (Monad m, P.Proxy p)
-    => (q -> p a' a b' b m r) -> (q -> p a' a b' (Maybe b) m r)
-onlyK k q = onlyP (k q)
-{-# INLINABLE onlyK #-}
-
-{-| Upgrade a proxy to work with 'Maybe's
-
-    The upgraded proxy handles 'Just's and auto-forwards 'Nothing's
--}
-justP :: (Monad m, P.ListT p) => p x a x b m r -> p x (Maybe a) x (Maybe b) m r
-justP p = P.runIdentityP (up >\\ (P.IdentityP p //> dn))
-  where
-    dn b = P.respond (Just b)
-    up x = do
-        ma <- P.request x
-        case ma of
-            Nothing -> do
-                x2 <- P.respond Nothing
-                up x2
-            Just a  -> return a
-{-# INLINABLE justP #-}
-
-{-| Upgrade a proxy \'@K@\'leisli arrow to work with 'Maybe's
-
-    The upgraded proxy handles 'Just's and auto-forwards 'Nothing's
-
-> justK p1 >-> justK p2 = justK (p1 >-> p2)
->
-> justK idT = idT
--}
-justK
-    :: (Monad m, P.ListT p)
-    => (q -> p x a x b m r) -> (q -> p x (Maybe a) x (Maybe b) m r)
-justK k q = justP (k q)
-{-# INLINABLE justK #-}
-
-{-| Evaluate a non-backtracking parser, returning the result or failing with a
-    'ParseFailure' exception.
--}
-runParseP :: (Monad m, P.Proxy p) => ParseP i p a' a b' b m r -> p a' a b' b m r
-runParseP p = S.evalStateP [] (unParseP p)
-{-# INLINABLE runParseP #-}
-
-{-| Evaluate a non-backtracking parser \'@K@\'leisli arrow, returning the result
-    or failing with a 'ParseFailure' exception.
--}
-runParseK
-    :: (Monad m, P.Proxy p)
-    => (q -> ParseP i p a' a b' b m r) -> (q -> p a' a b' b m r)
-runParseK k q = runParseP (k q)
-{-# INLINABLE runParseK #-}
 
 -- | Request 'Just' one element or 'Nothing' if at end of input
-drawMay :: (Monad m, P.Proxy p) => P.Pipe (ParseP a p) (Maybe a) b m (Maybe a)
+drawMay :: (P.Proxy p) => P.Pipe (ParseP s a p) (Maybe a) b (ST s) (Maybe a)
 drawMay = do
     s <- get
     case s of
@@ -147,7 +96,7 @@ drawMay = do
 {-# INLINE drawMay #-}
 
 -- | Push a single element into the leftover buffer
-unDraw :: (Monad m, P.Proxy p) => a -> P.Pipe (ParseP a p) (Maybe a) b m ()
+unDraw :: (P.Proxy p) => a -> P.Pipe (ParseP s a p) (Maybe a) b (ST s) ()
 unDraw a = do
     mas <- get
     put (Just a:mas)
@@ -155,8 +104,8 @@ unDraw a = do
 
 -- | Draw an element only when it satisfies the predicate
 drawWhen
-    :: (Monad m, P.Proxy p)
-    => (a -> Bool) -> P.Pipe (ParseP a p) (Maybe a) b m (Maybe a)
+    :: (P.Proxy p)
+    => (a -> Bool) -> P.Pipe (ParseP s a p) (Maybe a) b (ST s) (Maybe a)
 drawWhen pred = do
     ma <- drawMay
     case ma of
@@ -170,8 +119,7 @@ drawWhen pred = do
 
 -- | Skip an element only when it satisfies the predicate
 skipWhen
-    :: (Monad m, P.Proxy p)
-    => (a -> Bool) -> P.Pipe (ParseP a p) (Maybe a) b m ()
+    :: (P.Proxy p) => (a -> Bool) -> P.Pipe (ParseP s a p) (Maybe a) b (ST s) ()
 skipWhen pred = do
     ma <- drawMay
     case ma of
@@ -182,8 +130,7 @@ skipWhen pred = do
 {-# INLINABLE skipWhen #-}
 
 -- | Draw up to the specified number of elements
-drawUpToN
-    :: (Monad m, P.Proxy p) => Int -> P.Pipe (ParseP a p) (Maybe a) b m [a]
+drawUpToN :: (P.Proxy p) => Int -> P.Pipe (ParseP s a p) (Maybe a) b (ST s) [a]
 drawUpToN = go id
   where
     go diffAs n = if (n > 0)
@@ -199,8 +146,7 @@ drawUpToN = go id
 
     Faster than 'drawUpToN' if you don't need the input
 -}
-skipUpToN
-    :: (Monad m, P.Proxy p) => Int -> P.Pipe (ParseP a p) (Maybe a) b m ()
+skipUpToN :: (P.Proxy p) => Int -> P.Pipe (ParseP s a p) (Maybe a) b (ST s) ()
 skipUpToN = go
   where
     go n = if (n > 0)
@@ -214,8 +160,8 @@ skipUpToN = go
 
 -- | Request as many consecutive elements satisfying a predicate as possible
 drawWhile
-    :: (Monad m, P.Proxy p)
-    => (a -> Bool) -> P.Pipe (ParseP a p) (Maybe a) b m [a]
+    :: (P.Proxy p)
+    => (a -> Bool) -> P.Pipe (ParseP s a p) (Maybe a) b (ST s) [a]
 drawWhile pred = go id
   where
     go diffAs = do
@@ -234,8 +180,7 @@ drawWhile pred = go id
     Faster than 'drawWhile' if you don't need the input
 -}
 skipWhile
-    :: (Monad m, P.Proxy p)
-    => (a -> Bool) -> P.Pipe (ParseP a p) (Maybe a) b m ()
+    :: (P.Proxy p) => (a -> Bool) -> P.Pipe (ParseP s a p) (Maybe a) b (ST s) ()
 skipWhile pred = go
   where
     go = do
@@ -248,7 +193,7 @@ skipWhile pred = go
 {-# INLINABLE skipWhile #-}
 
 -- | Request the rest of the input
-drawAll :: (Monad m, P.Proxy p) => P.Pipe (ParseP a p) (Maybe a) b m [a]
+drawAll :: (P.Proxy p) => P.Pipe (ParseP s a p) (Maybe a) b (ST s) [a]
 drawAll = go id
   where
     go diffAs = do
@@ -262,7 +207,7 @@ drawAll = go id
 
     Faster than 'drawAll' if you don't need the input
 -}
-skipAll :: (Monad m, P.Proxy p) => P.Pipe (ParseP a p) (Maybe a) b m ()
+skipAll :: (P.Proxy p) => P.Pipe (ParseP s a p) (Maybe a) b (ST s) ()
 skipAll = go
   where
     go = do
@@ -273,7 +218,7 @@ skipAll = go
 {-# INLINABLE skipAll #-}
 
 -- | Return whether cursor is at end of input
-isEndOfInput :: (Monad m, P.Proxy p) => P.Pipe (ParseP a p) (Maybe a) b m Bool
+isEndOfInput :: (P.Proxy p) => P.Pipe (ParseP s a p) (Maybe a) b (ST s) Bool
 isEndOfInput = do
     ma <- peek
     return (case ma of
@@ -282,7 +227,7 @@ isEndOfInput = do
 {-# INLINABLE isEndOfInput #-}
 
 -- | Look ahead one element without consuming it
-peek :: (Monad m, P.Proxy p) => P.Pipe (ParseP a p) (Maybe a) b m (Maybe a)
+peek :: (P.Proxy p) => P.Pipe (ParseP s a p) (Maybe a) b (ST s) (Maybe a)
 peek = do
     ma <- drawMay
     case ma of
@@ -293,8 +238,8 @@ peek = do
 
 -- | Request a single element
 draw
-    :: (Monad m, P.Proxy p)
-    => P.Pipe (ParseP a (E.EitherP SomeException p)) (Maybe a) b m a
+    :: (P.Proxy p)
+    => P.Pipe (ParseP s a (E.EitherP SomeException p)) (Maybe a) b (ST s) a
 draw = do
     ma <- drawMay
     case ma of
@@ -304,8 +249,8 @@ draw = do
 
 -- | Skip a single element
 skip
-    :: (Monad m, P.Proxy p)
-    => P.Pipe (ParseP a (E.EitherP SomeException p)) (Maybe a) b m ()
+    :: (P.Proxy p)
+    => P.Pipe (ParseP s a (E.EitherP SomeException p)) (Maybe a) b (ST s) ()
 skip = do
     ma <- drawMay
     case ma of
@@ -315,9 +260,9 @@ skip = do
 
 -- | Request a single element that must satisfy the predicate
 drawIf
-    :: (Monad m, P.Proxy p)
+    :: (P.Proxy p)
     => (a -> Bool)
-    -> P.Pipe (ParseP a (E.EitherP SomeException p)) (Maybe a) b m a
+    -> P.Pipe (ParseP s a (E.EitherP SomeException p)) (Maybe a) b (ST s) a
 drawIf pred = do
     ma <- drawMay
     case ma of
@@ -329,9 +274,9 @@ drawIf pred = do
 
 -- | Skip a single element that must satisfy the predicate
 skipIf
-    :: (Monad m, P.Proxy p)
+    :: (P.Proxy p)
     => (a -> Bool)
-    -> P.Pipe (ParseP a (E.EitherP SomeException p)) (Maybe a) b m ()
+    -> P.Pipe (ParseP s a (E.EitherP SomeException p)) (Maybe a) b (ST s) ()
 skipIf pred = do
     ma <- drawMay
     case ma of
@@ -343,9 +288,9 @@ skipIf pred = do
 
 -- | Request a fixed number of elements
 drawN
-    :: (Monad m, P.Proxy p)
+    :: (P.Proxy p)
     => Int
-    -> P.Pipe (ParseP a (E.EitherP SomeException p)) (Maybe a) b m [a]
+    -> P.Pipe (ParseP s a (E.EitherP SomeException p)) (Maybe a) b (ST s) [a]
 drawN n0 = go id n0 where
     go diffAs n = if (n > 0)
         then do
@@ -363,8 +308,8 @@ drawN n0 = go id n0 where
     Faster than 'drawN' if you don't need the input
 -}
 skipN
-    :: (Monad m, P.Proxy p)
-    => Int -> P.Pipe (ParseP a (E.EitherP SomeException p)) (Maybe a) b m ()
+    :: (P.Proxy p)
+    => Int -> P.Pipe (ParseP s a (E.EitherP SomeException p)) (Maybe a) b (ST s) ()
 skipN n0 = go n0
   where
     go n = if (n > 0)
@@ -380,8 +325,8 @@ skipN n0 = go n0
 
 -- | Match end of input without consuming it
 endOfInput
-    :: (Monad m, P.Proxy p)
-    => P.Pipe (ParseP a (E.EitherP SomeException p)) (Maybe a) b m ()
+    :: (P.Proxy p)
+    => P.Pipe (ParseP s a (E.EitherP SomeException p)) (Maybe a) b (ST s) ()
 endOfInput = do
     b <- isEndOfInput
     if b then return () else parseFail "endOfInput: Not end of input"
@@ -389,19 +334,19 @@ endOfInput = do
 
 -- | Fail parsing with a 'String' error message
 parseFail
-    :: (Monad m, P.Proxy p)
-    => String -> P.Pipe (ParseP a (E.EitherP SomeException p)) (Maybe a) b m r
+    :: (P.Proxy p)
+    => String -> P.Pipe (ParseP s a (E.EitherP SomeException p)) (Maybe a) b (ST s) r
 parseFail str = P.liftP (E.throw (toException (ParseFailure str)))
 {-# INLINABLE parseFail #-}
 
 -- | Override an existing parser's error message with a new one
 (<??>)
-    :: (Monad m, P.Proxy p)
-    => P.Pipe (ParseP a (E.EitherP SomeException p)) (Maybe a) b m r
+    :: (P.Proxy p)
+    => P.Pipe (ParseP s a (E.EitherP SomeException p)) (Maybe a) b (ST s) r
        -- ^ Parser to modify
     -> String
        -- ^ New error message
-    -> P.Pipe (ParseP a (E.EitherP SomeException p)) (Maybe a) b m r
+    -> P.Pipe (ParseP s a (E.EitherP SomeException p)) (Maybe a) b (ST s) r
 p <??> str= P.hoistP
     (E.handle (\exc -> E.throw (case fromException exc of
         Just (ParseFailure _) -> toException (ParseFailure str)
@@ -417,6 +362,8 @@ newtype ParseFailure = ParseFailure String deriving (Show, Typeable)
 instance Exception ParseFailure
 
 {- $reexport
-    @Control.Proxy.Trans.Either@ exports run functions for the 'E.EitherP' proxy
-    transformer.
+    The @Control.Proxy.Trans.Either@ re-export provides 'E.runEitherP',
+    'E.runEitherK', and 'E.EitherP'.
+
+    The @Control.Monad.ST@ re-export provides 'ST', 'RealWorld', and 'stToIO'.
 -}
