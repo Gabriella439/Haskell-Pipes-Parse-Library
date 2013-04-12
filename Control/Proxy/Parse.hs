@@ -6,7 +6,7 @@ module Control.Proxy.Parse (
     -- * Parsing proxy transformer
     ParseP,
     parse,
-    impure,
+    spoil,
 
     -- * Primitive parsers
     drawMay,
@@ -48,7 +48,6 @@ module Control.Proxy.Parse (
 
 import Control.Exception (SomeException, Exception, toException, fromException)
 import Control.Monad (forever)
-import Control.Monad.Morph (hoist)
 import Control.Monad.ST (ST, RealWorld, stToIO)
 import qualified Control.Proxy as P
 import Control.Proxy ((>>~), (//>), (>\\), (>->))
@@ -61,7 +60,7 @@ import Data.Typeable (Typeable)
 parse
     :: (Monad m, P.Proxy p)
     => (forall x . p b' (Maybe b) c' c (ST s) x -> p b' (Maybe b) c' c  m x)
-    -- ^ Monad morphism
+    -- ^ Monad/Proxy morphism
     -> (b'  ->            p a'        a  b' b m r')
     -- ^ Original source
     -> (c'_ -> ParseP s i p b' (Maybe b) c' c m r )
@@ -78,8 +77,12 @@ parse morph source parser = only . source >-> runParseP morph . parser
         a2 <- P.request a'
         wrap a2
 
-impure :: (P.Proxy p) => p a' a b' b (ST RealWorld) r -> p a' a b' b IO r
-impure p = P.runIdentityP (hoist stToIO (P.IdentityP p))
+{-| Change the base monad from 'ST' to 'IO'
+
+    'spoil' is a proxy morphism
+-}
+spoil :: (P.Proxy p) => p a' a b' b (ST RealWorld) r -> p a' a b' b IO r
+spoil p = P.runIdentityP (P.hoist stToIO (P.IdentityP p))
 
 -- | Request 'Just' one element or 'Nothing' if at end of input
 drawMay :: (P.Proxy p) => P.Pipe (ParseP s a p) (Maybe a) b (ST s) (Maybe a)
