@@ -1,6 +1,8 @@
 {-| This module exposes internal implementation details that might change in the
     future.  I only expose this so that people can write high-efficiency parsing
-    primitives not implementable in terms of existing primitives.
+    primitives not implementable in terms of existing primitives.  My own
+    benchmarks show that you almost always get equally fast performance using
+    'drawMay', sometimes even faster, so you probably never need this module.
 -}
 
 {-# LANGUAGE RankNTypes #-}
@@ -79,7 +81,7 @@ instance P.ProxyTrans (ParseP s i) where
 instance P.PFunctor (ParseP s i) where
     hoistP nat p = ParseP (P.hoistP nat (unParseP p))
 
--- | Unwrap a 'ParseP' proxy in the 'ST' monad
+-- | Unwrap a 'ParseP' proxy
 runParseP
     :: (Monad m, P.Proxy p)
     => (forall x . p a' a b' b (ST s) x -> p a' a b' b m x)

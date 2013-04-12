@@ -60,7 +60,7 @@ import Data.Typeable (Typeable)
 parse
     :: (Monad m, P.Proxy p)
     => (forall x . p b' (Maybe b) c' c (ST s) x -> p b' (Maybe b) c' c  m x)
-    -- ^ Monad/Proxy morphism
+    -- ^ Monad morphism
     -> (b'  ->            p a'        a  b' b m r')
     -- ^ Original source
     -> (c'_ -> ParseP s i p b' (Maybe b) c' c m r )
@@ -79,7 +79,8 @@ parse morph source parser = only . source >-> runParseP morph . parser
 
 {-| Change the base monad from 'ST' to 'IO'
 
-    'spoil' is a proxy morphism
+    'spoil' is a proxy morphism, and therefore is also a monad morphism suitable
+    for 'parse'.
 -}
 spoil :: (P.Proxy p) => p a' a b' b (ST RealWorld) r -> p a' a b' b IO r
 spoil p = P.runIdentityP (P.hoist stToIO (P.IdentityP p))
