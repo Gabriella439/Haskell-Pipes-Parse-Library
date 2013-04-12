@@ -6,6 +6,7 @@ module Control.Proxy.Parse (
     -- * Parsing proxy transformer
     ParseP,
     parse,
+    impure,
 
     -- * Primitive parsers
     drawMay,
@@ -47,6 +48,7 @@ module Control.Proxy.Parse (
 
 import Control.Exception (SomeException, Exception, toException, fromException)
 import Control.Monad (forever)
+import Control.Monad.Morph (hoist)
 import Control.Monad.ST (ST, RealWorld, stToIO)
 import qualified Control.Proxy as P
 import Control.Proxy ((>>~), (//>), (>\\), (>->))
@@ -60,22 +62,24 @@ parse
     :: (Monad m, P.Proxy p)
     => (forall x . p b' (Maybe b) c' c (ST s) x -> p b' (Maybe b) c' c  m x)
     -- ^ Monad morphism
-    -> (b'  ->            p a'        a  b' b m s)
+    -> (b'  ->            p a'        a  b' b m r')
     -- ^ Original source
-    -> (c'_ -> ParseP s i p b' (Maybe b) c' c m r)
+    -> (c'_ -> ParseP s i p b' (Maybe b) c' c m r )
     -- ^ Parser
-    -> (c'_ ->            p a'        a  c' c m r)
+    -> (c'_ ->            p a'        a  c' c m r )
     -- ^ New source
-parse morph source parser = onlyK source >-> runParseP morph . parser
-
-onlyK k q = P.runIdentityP (do
-    r <- P.IdentityP (k q) >>~ wrap
-    forever $ P.respond Nothing )
+parse morph source parser = only . source >-> runParseP morph . parser
   where
+    only p = P.runIdentityP (do
+        r <- P.IdentityP p >>~ wrap
+        forever $ P.respond Nothing )
     wrap a = do
         a' <- P.respond (Just a)
         a2 <- P.request a'
         wrap a2
+
+impure :: (P.Proxy p) => p a' a b' b (ST RealWorld) r -> p a' a b' b IO r
+impure p = P.runIdentityP (hoist stToIO (P.IdentityP p))
 
 -- | Request 'Just' one element or 'Nothing' if at end of input
 drawMay :: (P.Proxy p) => P.Pipe (ParseP s a p) (Maybe a) b (ST s) (Maybe a)
