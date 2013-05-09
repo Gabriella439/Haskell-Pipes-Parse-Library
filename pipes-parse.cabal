@@ -33,7 +33,7 @@ Source-Repository head
 Library
     Build-Depends:
         base         >= 4       && < 5  ,
-        pipes        >= 3.2.0   && < 3.3,
+        pipes        >= 3.3     && < 3.4,
         transformers >= 0.2.0.0 && < 0.4
     Exposed-Modules:
         Control.Proxy.Parse,
