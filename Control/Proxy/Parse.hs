@@ -56,7 +56,7 @@ import qualified Control.Proxy.Trans.State as S
 import Data.Typeable (Typeable)
 
 -- | Request 'Just' one element or 'Nothing' if at end of input
-drawMay :: (Monad m, P.Proxy p) => ParseT [Maybe a] p a m (Maybe a)
+drawMay :: (Monad m) => ParseT [Maybe a] a m (Maybe a)
 drawMay = ParseT $ P.liftP $ do
     s <- S.get
     case s of
@@ -74,15 +74,14 @@ drawMay = ParseT $ P.liftP $ do
 {-# INLINE drawMay #-}
 
 -- | Push a single element into the leftover buffer
-unDraw :: (Monad m, P.Proxy p) => a -> ParseT [Maybe a] p a m ()
+unDraw :: (Monad m) => a -> ParseT [Maybe a] a m ()
 unDraw a = ParseT $ P.liftP $ do
     mas <- S.get
     S.put (Just a:mas)
 {-# INLINABLE unDraw #-}
 
 -- | Draw an element only when it satisfies the predicate
-drawWhen
-    :: (Monad m, P.Proxy p) => (a -> Bool) -> ParseT [Maybe a] p a m (Maybe a)
+drawWhen :: (Monad m) => (a -> Bool) -> ParseT [Maybe a] a m (Maybe a)
 drawWhen pred = do
     ma <- drawMay
     case ma of
@@ -95,7 +94,7 @@ drawWhen pred = do
 {-# INLINABLE drawWhen #-}
 
 -- | Skip an element only when it satisfies the predicate
-skipWhen :: (Monad m, P.Proxy p) => (a -> Bool) -> ParseT [Maybe a] p a m ()
+skipWhen :: (Monad m) => (a -> Bool) -> ParseT [Maybe a] a m ()
 skipWhen pred = do
     ma <- drawMay
     case ma of
@@ -106,7 +105,7 @@ skipWhen pred = do
 {-# INLINABLE skipWhen #-}
 
 -- | Draw up to the specified number of elements
-drawUpToN :: (Monad m, P.Proxy p) => Int -> ParseT [Maybe a] p a m [a]
+drawUpToN :: (Monad m) => Int -> ParseT [Maybe a] a m [a]
 drawUpToN = go id
   where
     go diffAs n = if (n > 0)
@@ -122,7 +121,7 @@ drawUpToN = go id
 
     Faster than 'drawUpToN' if you don't need the input
 -}
-skipUpToN :: (Monad m, P.Proxy p) => Int -> ParseT [Maybe a] p a m ()
+skipUpToN :: (Monad m) => Int -> ParseT [Maybe a] a m ()
 skipUpToN = go
   where
     go n = if (n > 0)
@@ -135,7 +134,7 @@ skipUpToN = go
 {-# INLINABLE skipUpToN #-}
 
 -- | Request as many consecutive elements satisfying a predicate as possible
-drawWhile :: (Monad m, P.Proxy p) => (a -> Bool) -> ParseT [Maybe a] p a m [a]
+drawWhile :: (Monad m) => (a -> Bool) -> ParseT [Maybe a] a m [a]
 drawWhile pred = go id
   where
     go diffAs = do
@@ -153,7 +152,7 @@ drawWhile pred = go id
 
     Faster than 'drawWhile' if you don't need the input
 -}
-skipWhile :: (Monad m, P.Proxy p) => (a -> Bool) -> ParseT [Maybe a] p a m ()
+skipWhile :: (Monad m) => (a -> Bool) -> ParseT [Maybe a] a m ()
 skipWhile pred = go
   where
     go = do
@@ -166,7 +165,7 @@ skipWhile pred = go
 {-# INLINABLE skipWhile #-}
 
 -- | Request the rest of the input
-drawAll :: (Monad m, P.Proxy p) => ParseT [Maybe a] p a m [a]
+drawAll :: (Monad m) => ParseT [Maybe a] a m [a]
 drawAll = go id
   where
     go diffAs = do
@@ -180,7 +179,7 @@ drawAll = go id
 
     Faster than 'drawAll' if you don't need the input
 -}
-skipAll :: (Monad m, P.Proxy p) => ParseT [Maybe a] p a m ()
+skipAll :: (Monad m) => ParseT [Maybe a] a m ()
 skipAll = go
   where
     go = do
@@ -191,7 +190,7 @@ skipAll = go
 {-# INLINABLE skipAll #-}
 
 -- | Return whether cursor is at end of input
-isEndOfInput :: (Monad m, P.Proxy p) => ParseT [Maybe a] p a m Bool
+isEndOfInput :: (Monad m) => ParseT [Maybe a] a m Bool
 isEndOfInput = do
     ma <- peek
     return (case ma of
@@ -200,7 +199,7 @@ isEndOfInput = do
 {-# INLINABLE isEndOfInput #-}
 
 -- | Look ahead one element without consuming it
-peek :: (Monad m, P.Proxy p) => ParseT [Maybe a] p a m (Maybe a)
+peek :: (Monad m) => ParseT [Maybe a] a m (Maybe a)
 peek = do
     ma <- drawMay
     case ma of
@@ -210,7 +209,7 @@ peek = do
 {-# INLINABLE peek #-}
 
 -- | Request a single element
-draw :: (Monad m, P.Proxy p) => ParseT [Maybe a] p a m a
+draw :: (Monad m) => ParseT [Maybe a] a m a
 draw = do
     ma <- drawMay
     case ma of
@@ -219,7 +218,7 @@ draw = do
 {-# INLINABLE draw #-}
 
 -- | Skip a single element
-skip :: (Monad m, P.Proxy p) => ParseT [Maybe a] p a m ()
+skip :: (Monad m) => ParseT [Maybe a] a m ()
 skip = do
     ma <- drawMay
     case ma of
@@ -228,7 +227,7 @@ skip = do
 {-# INLINABLE skip #-}
 
 -- | Request a single element that must satisfy the predicate
-drawIf :: (Monad m, P.Proxy p) => (a -> Bool) -> ParseT [Maybe a] p a m a
+drawIf :: (Monad m) => (a -> Bool) -> ParseT [Maybe a] a m a
 drawIf pred = do
     ma <- drawMay
     case ma of
@@ -239,7 +238,7 @@ drawIf pred = do
 {-# INLINABLE drawIf #-}
 
 -- | Skip a single element that must satisfy the predicate
-skipIf :: (Monad m, P.Proxy p) => (a -> Bool) -> ParseT [Maybe a] p a m ()
+skipIf :: (Monad m) => (a -> Bool) -> ParseT [Maybe a] a m ()
 skipIf pred = do
     ma <- drawMay
     case ma of
@@ -250,7 +249,7 @@ skipIf pred = do
 {-# INLINABLE skipIf #-}
 
 -- | Request a fixed number of elements
-drawN :: (Monad m, P.Proxy p) => Int -> ParseT [Maybe a] p a m [a]
+drawN :: (Monad m) => Int -> ParseT [Maybe a] a m [a]
 drawN n0 = go id n0 where
     go diffAs n = if (n > 0)
         then do
@@ -267,7 +266,7 @@ drawN n0 = go id n0 where
 
     Faster than 'drawN' if you don't need the input
 -}
-skipN :: (Monad m, P.Proxy p) => Int -> ParseT [Maybe a] p a m ()
+skipN :: (Monad m) => Int -> ParseT [Maybe a] a m ()
 skipN n0 = go n0
   where
     go n = if (n > 0)
@@ -282,16 +281,14 @@ skipN n0 = go n0
 {-# INLINABLE skipN #-}
 
 -- | Match end of input without consuming it
-endOfInput :: (Monad m, P.Proxy p) => ParseT [Maybe a] p a m ()
+endOfInput :: (Monad m) => ParseT [Maybe a] a m ()
 endOfInput = do
     b <- isEndOfInput
     if b then return () else parseFail "endOfInput: Not end of input"
 {-# INLINABLE endOfInput #-}
 
 -- | Fail parsing with a 'String' error message
-parseFail
-    :: (Monad m, P.Proxy p)
-    => String -> ParseT s p a m b
+parseFail :: (Monad m) => String -> ParseT s a m b
 parseFail _ = mzero
 {-# INLINABLE parseFail #-}
 

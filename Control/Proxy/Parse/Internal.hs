@@ -22,43 +22,47 @@ import qualified Control.Proxy.Trans.Maybe as M
 import qualified Control.Proxy.Trans.State as S
 
 -- | The 'ParseP' proxy transformer stores parsing leftovers
-newtype ParseT s p a m b = ParseT
-    { runParseT :: forall y' y . M.MaybeP (S.StateP s p) () (Maybe a) y' y m b }
+newtype ParseT s a m b = ParseT
+    { runParseT
+        :: forall p y' y
+        .  P.Proxy p
+        => M.MaybeP (S.StateP s p) () (Maybe a) y' y m b
+    }
 
 -- Deriving Functor
-instance (Monad m, P.Proxy p) => Functor (ParseT s p a m) where
+instance (Monad m) => Functor (ParseT s a m) where
     fmap f p = ParseT (fmap f (runParseT p))
 
 -- Deriving Applicative
-instance (Monad m, P.Proxy p) => Applicative (ParseT s p a m) where
+instance (Monad m) => Applicative (ParseT s a m) where
     pure r  = ParseT (pure r)
     f <*> x = ParseT (runParseT f <*> runParseT x)
 
 -- Deriving Monad
-instance (Monad m, P.Proxy p) => Monad (ParseT s p a m) where
+instance (Monad m) => Monad (ParseT s a m) where
     return r = ParseT (P.return_P r)
     m >>= f  = ParseT (runParseT m >>= \r -> runParseT (f r))
 
 -- Deriving Alternative
-instance (Monad m, P.Proxy p) => Alternative (ParseT s p a m) where
+instance (Monad m) => Alternative (ParseT s a m) where
     empty     = ParseT empty
     p1 <|> p2 = ParseT (runParseT p1 <|> runParseT p2)
 
 -- Deriving MonadPlus
-instance (Monad m, P.Proxy p) => MonadPlus (ParseT s p a m) where
+instance (Monad m) => MonadPlus (ParseT s a m) where
     mzero       = ParseT mzero
     mplus p1 p2 = ParseT (mplus (runParseT p1) (runParseT p2))
 
 -- Deriving MonadTrans
-instance (P.Proxy p) => MonadTrans (ParseT s p a) where
+instance MonadTrans (ParseT s a) where
     lift m = ParseT (lift m)
 
 -- Deriving MFunctor
-instance (P.Proxy p) => P.MFunctor (ParseT s p a) where
+instance P.MFunctor (ParseT s a) where
     hoist nat p = ParseT (hoist nat (runParseT p))
 
 -- Deriving MonadIO
-instance (MonadIO m, P.Proxy p) => MonadIO (ParseT s p a m) where
+instance (MonadIO m) => MonadIO (ParseT s a m) where
     liftIO io = ParseT (liftIO io)
 
 {-
