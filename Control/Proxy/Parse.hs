@@ -5,6 +5,8 @@
 module Control.Proxy.Parse (
     -- * Parsing proxy transformer
     ParseT,
+    (\$\),
+    (\|\),
 
     -- * Primitive parsers
     drawMay,
