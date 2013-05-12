@@ -52,8 +52,17 @@ import Control.Proxy ((>>~), (>->))
 import Control.Proxy.Parse.Internal (ParseT(ParseT), runParseT)
 import qualified Control.Proxy.Trans.Either as E
 import Control.Proxy.Trans.Either (runEitherP, runEitherK)
+import qualified Control.Proxy.Trans.Maybe as M
 import qualified Control.Proxy.Trans.State as S
 import Data.Typeable (Typeable)
+
+(\$\) :: (Monad m) => ParseT s a m b -> ParseT s b m c -> ParseT s a m c
+(ParseT p1) \$\ (ParseT p2)
+    = ParseT $ M.MaybeP $ (\() -> M.runMaybeP p1) P.>\\ M.runMaybeP p2
+
+(\|\)
+    :: (Monad m) => ParseT s1 a m b -> ParseT s2 b m c -> ParseT (s1, s2) a m c
+(\|\) = undefined
 
 -- | Request 'Just' one element or 'Nothing' if at end of input
 drawMay :: (Monad m) => ParseT [Maybe a] a m (Maybe a)
