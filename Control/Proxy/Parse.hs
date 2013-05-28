@@ -6,6 +6,7 @@ module Control.Proxy.Parse (
     -- * Leftovers
     draw,
     unDraw,
+    peek,
 
     -- * Lenses
     zoom,
@@ -14,27 +15,31 @@ module Control.Proxy.Parse (
     (/\),
 
     -- * Utilities
+    passUpToN,
+    passWhile,
     skipAll,
-    passUpTo,
 
     -- * Adapters
     fmapPull,
     returnPull,
-    bindPull
+    bindPull,
+    wrap,
+    unwrap,
+
+    -- * Re-exports
+    module Control.Proxy.Trans.State
     ) where
 
 import qualified Control.Monad.State.Class as S
 import Control.Proxy
-import Control.Proxy.Trans.State (StateP(StateP, unStateP), put, get, modify)
+import Control.Proxy.Trans.State
 
 instance (Monad m, Proxy p) => S.MonadState s (StateP s p a' a b' b m) where
     get = get
     put = put
 
 -- | Like @request ()@, except try to use the leftovers buffer first
-draw
-    :: (Monad m, Proxy p)
-    => StateP [Maybe a] p () (Maybe a) y' y m (Maybe a)
+draw :: (Monad m, Proxy p) => StateP [Maybe a] p () (Maybe a) y' y m (Maybe a)
 draw = do
     s <- get
     case s of
@@ -44,10 +49,18 @@ draw = do
             return ma
 
 -- | Push an element back onto the leftovers buffer
-unDraw
-    :: (Monad m, Proxy p)
-    => Maybe a -> StateP [Maybe a] p x' x y' y m ()
-unDraw ma = modify (ma:)
+unDraw :: (Monad m, Proxy p) => a -> StateP [Maybe a] p x' x y' y m ()
+unDraw a = modify (Just a:)
+
+-- | Peek at the next element without consuming it
+peek :: (Monad m, Proxy p) => StateP [Maybe a] p () (Maybe a) y' y m (Maybe a)
+peek = do
+    ma <- draw
+    case ma of
+        Nothing -> return ()
+        Just a  -> unDraw a
+    return ma
+            
 
 {-| 'zoom' in on a sub-state using a @Lens@
 
@@ -127,6 +140,41 @@ _snd f (x, a) = fmap (\b -> (x, b)) (f a)
 
 infixl 7 /\
 
+-- | Pass up to the specified number of elements
+passUpToN
+    :: (Monad m, Proxy p)
+    => Int -> () -> StateP [Maybe a] p () (Maybe a) () (Maybe a) m r
+passUpToN n0 () = go n0
+  where
+    go n0 =
+        if (n0 <= 0)
+        then forever $ respond Nothing
+        else do
+            ma <- draw
+            respond ma
+            case ma of
+                Nothing -> forever $ respond Nothing
+                Just _  -> go (n0 - 1)
+
+-- | Pass as many consecutive elements satisfying a predicate as possible
+passWhile
+    :: (Monad m, Proxy p)
+    => (a -> Bool) -> () -> StateP [Maybe a] p () (Maybe a) () (Maybe a) m r
+passWhile pred () = go
+  where
+    go = do
+        ma <- draw
+        case ma of
+            Nothing -> forever $ respond Nothing
+            Just a  ->
+                if (pred a)
+                then do
+                    respond ma
+                    go
+                else do
+                    unDraw a
+                    forever $ respond Nothing
+
 -- | Discard every element
 skipAll :: (Monad m, Proxy p) => () -> StateP [Maybe a] p () (Maybe a) y' y m ()
 skipAll () = loop
@@ -136,24 +184,6 @@ skipAll () = loop
         case ma of
             Nothing -> return ()
             Just _  -> loop
-
--- | Pass up to the specified number of elements 
-passUpTo
-    :: (Monad m, Proxy p)
-    => Int
-    -- ^ Number of elements to limit
-    -> (() -> StateP ([Maybe a], Sum Int) p () (Maybe a) y' y m (Maybe a))
-    -- ^ Read handle
-passUpTo n () = do
-    Sum m <- zoom _snd get
-    if (m < n)
-        then do
-            ma <- zoom _fst draw
-            case ma of
-                Nothing -> return ()
-                Just _  -> zoom _snd $ put $! Sum (m + 1)
-            return ma
-        else return Nothing
 
 {-| Lift a 'Maybe'-oblivious pipe to a 'Maybe'-aware pipe by auto-forwarding
     all 'Nothing's
@@ -204,3 +234,25 @@ bindPull f = runIdentityP . (up \>\ IdentityP . f)
                 a'2 <- respond Nothing
                 up a'2
             Just a  -> return a
+
+{-| Guard a pipe from terminating by wrapping every output in 'Just' and ending
+    with a never-ending stream of 'Nothing's
+-}
+wrap :: (Monad m, Proxy p) => p a' a b' b m r -> p a' a b' (Maybe b) m s
+wrap p = runIdentityP $ do
+    IdentityP p //> \b -> respond (Just b)
+    forever $ respond Nothing
+
+{-| Compose 'unwrap' downstream of a guarded pipe to unwrap all 'Just's and
+    terminate on the first 'Nothing'
+-}
+unwrap :: (Monad m, Proxy p) => x -> p x (Maybe a) x a m ()
+unwrap x = runIdentityP (go x)
+  where
+    go x = do
+        ma <- request x
+        case ma of
+            Nothing -> return ()
+            Just a  -> do
+                x2 <- respond a
+                go x2
