@@ -46,7 +46,9 @@ instance (Monad m, Proxy p) => S.MonadState s (StateP s p a' a b' b m) where
     get = get
     put = put
 
--- | Like @request ()@, except try to use the leftovers buffer first
+-- | Like @request ()@, except try to use the leftovers buffer first.
+--
+-- A 'Nothing' return value indicates end of input.
 draw :: (Monad m, Proxy p) => StateP [Maybe a] p () (Maybe a) y' y m (Maybe a)
 draw = do
     s <- get
@@ -56,11 +58,12 @@ draw = do
             put mas
             return ma
 
--- | Push an element back onto the leftovers buffer
+-- | Prepend an element to the leftovers buffer.
 unDraw :: (Monad m, Proxy p) => a -> StateP [Maybe a] p x' x y' y m ()
 unDraw a = modify (Just a:)
 
--- | Draw an element or die trying
+-- | Try to 'draw' an element. If there is no more input available, throw a
+-- 'ParseFailure' exception in `EitherP`.
 drawIt
     :: (Monad m, Proxy p)
     => StateP [Maybe a] (EitherP SomeException p) () (Maybe a) y' y m a
@@ -71,7 +74,7 @@ drawIt = do
             ParseFailure "drawIt: End of input"
         Just a  -> return a
 
--- | Peek at the next element without consuming it
+-- | Peek at the next input element without consuming it.
 peek :: (Monad m, Proxy p) => StateP [Maybe a] p () (Maybe a) y' y m (Maybe a)
 peek = do
     ma <- draw
@@ -80,7 +83,7 @@ peek = do
         Just a  -> unDraw a
     return ma
 
--- | Check if at end of stream
+-- | Check if at end of input stream.
 isEndOfInput
     :: (Monad m, Proxy p) => StateP [Maybe a] p () (Maybe a) y' y m Bool
 isEndOfInput = do
@@ -89,7 +92,7 @@ isEndOfInput = do
         Nothing -> return True
         Just _  -> return False
 
--- | Drain all input
+-- | Consume and discard all input.
 skipAll :: (Monad m, Proxy p) => () -> StateP [Maybe a] p () (Maybe a) y' y m ()
 skipAll () = loop
   where
@@ -99,7 +102,7 @@ skipAll () = loop
             Nothing -> return ()
             Just _  -> loop
 
--- | Pass up to the specified number of elements
+-- | Forward downstream up to the specified number of elements.
 passUpToN
     :: (Monad m, Proxy p)
     => Int -> () -> StateP [Maybe a] p () (Maybe a) () (Maybe a) m r
@@ -115,7 +118,8 @@ passUpToN n0 () = go n0
                 Nothing -> forever $ respond Nothing
                 Just _  -> go (n0 - 1)
 
--- | Pass as many consecutive elements satisfying a predicate as possible
+-- | Forward downstream as many consecutive elements satisfying a predicate as
+-- possible.
 passWhile
     :: (Monad m, Proxy p)
     => (a -> Bool) -> () -> StateP [Maybe a] p () (Maybe a) () (Maybe a) m r
@@ -134,13 +138,13 @@ passWhile pred () = go
                     unDraw a
                     forever $ respond Nothing
 
--- | Parsing failed.  The 'String' describes the nature of the parse failure
+-- | Parsing failed. The 'String' describes the nature of the parse failure
 newtype ParseFailure = ParseFailure String deriving (Show, Typeable)
 
 instance Exception ParseFailure
 
 {-| Guard a pipe from terminating by wrapping every output in 'Just' and ending
-    with a never-ending stream of 'Nothing's
+    with a never-ending stream of 'Nothing's.
 -}
 wrap :: (Monad m, Proxy p) => p a' a b' b m r -> p a' a b' (Maybe b) m s
 wrap p = runIdentityP $ do
@@ -148,7 +152,7 @@ wrap p = runIdentityP $ do
     forever $ respond Nothing
 
 {-| Compose 'unwrap' downstream of a guarded pipe to unwrap all 'Just's and
-    terminate on the first 'Nothing'
+    terminate on the first 'Nothing'.
 -}
 unwrap :: (Monad m, Proxy p) => x -> p x (Maybe a) x a m ()
 unwrap x = runIdentityP (go x)
@@ -162,7 +166,7 @@ unwrap x = runIdentityP (go x)
                 go x2
 
 {-| Lift a 'Maybe'-oblivious pipe to a 'Maybe'-aware pipe by auto-forwarding
-    all 'Nothing's
+    all 'Nothing's.
 
 > fmapPull f >-> fmapPull g = fmapPull (f >-> g)
 >
@@ -174,7 +178,7 @@ fmapPull
     -> (x -> p x (Maybe a) x (Maybe b) m r)
 fmapPull f = bindPull (f >-> returnPull)
 
--- | Wrap all values in 'Just'
+-- | Wrap all values flowing downstream in 'Just'.
 returnPull :: (Monad m, Proxy p) => x -> p x a x (Maybe a) m r
 returnPull = mapD Just
 
@@ -211,7 +215,7 @@ bindPull f = runIdentityP . (up \>\ IdentityP . f)
                 up a'2
             Just a  -> return a
 
-{-| 'zoom' in on a sub-state using a @Lens@
+{-| 'zoom' in on a sub-state using a 'Control.Lens.Lens'.
 
 > zoom :: Lens' s1 s2 -> StateP s2 p a' a b' b m r -> StateP s1 p a' a b' b m r
 
@@ -222,7 +226,7 @@ bindPull f = runIdentityP . (up \>\ IdentityP . f)
 zoom
     :: (Monad m, Proxy p)
     => ((s2 -> (s2, s2)) -> (s1 -> (s2, s1)))
-    -- ^ Lens' s1 s2
+    -- ^ 'Control.Lens.Lens'' s1 s2
     -> StateP s2 p a' a b' b m r
     -- ^ Local state
     -> StateP s1 p a' a b' b m r
@@ -245,7 +249,7 @@ zoom lens p = StateP $ \s2_0 ->
         let (_, s2') = lens (\x -> (x, s1)) s2
         in  return_P (r, s2')
 
-{-| A lens to the first element of a pair
+{-| A 'Control.Lens.Lens' to the first element of a pair.
 
     Like @_1@, but more monomorphic
 
@@ -254,7 +258,7 @@ zoom lens p = StateP $ \s2_0 ->
 _fst :: (Functor f) => (a -> f b) -> ((a, x) -> f (b, x))
 _fst f (a, x) = fmap (\b -> (b, x)) (f a)
 
-{-| A lens to the second element of a pair
+{-| A 'Control.Lens.Lens' to the second element of a pair.
 
     Like @_2@, but more monomorphic
 
@@ -263,7 +267,7 @@ _fst f (a, x) = fmap (\b -> (b, x)) (f a)
 _snd :: (Functor f) => (a -> f b) -> ((x, a) -> f (x, b))
 _snd f (x, a) = fmap (\b -> (x, b)) (f a)
 
-{-| Pair up two lenses
+{-| Pair up two 'Control.Lens.Lens'es.
 
 > (/\) :: Lens' c a -> Lens' c b -> Lens' c (a, b)
 
@@ -272,11 +276,11 @@ _snd f (x, a) = fmap (\b -> (x, b)) (f a)
 (/\)
     :: (Functor f)
     => ((a -> (a, a)) -> (c -> (a, c)))
-    -- ^ Lens' c a
+    -- ^ 'Control.Lens.Lens'' c a
     -> ((b -> (b, b)) -> (c -> (b, c)))
-    -- ^ Lens' c b
+    -- ^ 'Control.Lens.Lens'' c b
     -> (((a, b) -> f (a, b)) -> (c -> f c))
-    -- ^ Lens' c (a, b)
+    -- ^ 'Control.Lens.Lens'' c (a, b)
 (lens1 /\ lens2) f c0 =
     let (a, _) = lens1 (\a_ -> (a_, a_)) c0
         (b, _) = lens2 (\b_ -> (b_, b_)) c0
