@@ -89,7 +89,7 @@ isEndOfInput = do
         Nothing -> return True
         Just _  -> return False
 
--- | Discard every element
+-- | Drain all input
 skipAll :: (Monad m, Proxy p) => () -> StateP [Maybe a] p () (Maybe a) y' y m ()
 skipAll () = loop
   where
@@ -134,6 +134,7 @@ passWhile pred () = go
                     unDraw a
                     forever $ respond Nothing
 
+-- | Parsing failed.  The 'String' describes the nature of the parse failure
 newtype ParseFailure = ParseFailure String deriving (Show, Typeable)
 
 instance Exception ParseFailure
@@ -271,11 +272,11 @@ _snd f (x, a) = fmap (\b -> (x, b)) (f a)
 (/\)
     :: (Functor f)
     => ((a -> (a, a)) -> (c -> (a, c)))
-    -- ^ Lens to first element
+    -- ^ Lens' c a
     -> ((b -> (b, b)) -> (c -> (b, c)))
-    -- ^ Lens to second element
+    -- ^ Lens' c b
     -> (((a, b) -> f (a, b)) -> (c -> f c))
-    -- ^ Lens to both elements
+    -- ^ Lens' c (a, b)
 (lens1 /\ lens2) f c0 =
     let (a, _) = lens1 (\a_ -> (a_, a_)) c0
         (b, _) = lens2 (\b_ -> (b_, b_)) c0
