@@ -60,15 +60,15 @@ draw = do
 unDraw :: (Monad m, Proxy p) => a -> StateP [Maybe a] p x' x y' y m ()
 unDraw a = modify (Just a:)
 
--- | Draw an element or die trying
+-- | Try to 'draw' an element. If there is no more input available, throw a
+-- 'EOF' exception in 'EitherP'.
 drawIt
     :: (Monad m, Proxy p)
     => StateP [Maybe a] (EitherP SomeException p) () (Maybe a) y' y m a
 drawIt = do
     ma <- draw
     case ma of
-        Nothing -> liftP $ throw $ toException $
-            ParseFailure "drawIt: End of input"
+        Nothing -> liftP $ throw $ toException $ EOF
         Just a  -> return a
 
 -- | Peek at the next element without consuming it
@@ -134,8 +134,10 @@ passWhile pred () = go
                     unDraw a
                     forever $ respond Nothing
 
--- | Parsing failed.  The 'String' describes the nature of the parse failure
-newtype ParseFailure = ParseFailure String deriving (Show, Typeable)
+-- | Exception indicating a parse failure.
+data ParseFailure
+   = EOF -- ^End of input stream reached.
+   deriving (Show, Typeable)
 
 instance Exception ParseFailure
 
