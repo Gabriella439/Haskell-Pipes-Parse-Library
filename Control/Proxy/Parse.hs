@@ -136,7 +136,8 @@ passWhile pred () = go
 
 -- | Exception indicating a parse failure.
 data ParseFailure
-   = EOF -- ^End of input stream reached.
+   = EOF                 -- ^End of input stream reached.
+   | ParseFailure String -- ^Custom error message.
    deriving (Show, Typeable)
 
 instance Exception ParseFailure
