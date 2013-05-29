@@ -31,8 +31,10 @@ module Control.Proxy.Parse (
     module Control.Proxy.Trans.State
     ) where
 
+import Control.Monad (forever)
 import qualified Control.Monad.State.Class as S
-import Control.Proxy
+import Control.Proxy ((>->), (\>\), (//>), (>\\), (?>=))
+import qualified Control.Proxy as P
 import Control.Proxy.Trans.State (
     StateP(StateP, unStateP),
     state,
@@ -48,26 +50,26 @@ import Control.Proxy.Trans.State (
     modify,
     gets )
 
-instance (Monad m, Proxy p) => S.MonadState s (StateP s p a' a b' b m) where
+instance (Monad m, P.Proxy p) => S.MonadState s (StateP s p a' a b' b m) where
     get = get
     put = put
 
 -- | Like @request ()@, except try to use the leftovers buffer first
-draw :: (Monad m, Proxy p) => StateP [a] p () (Maybe a) y' y m (Maybe a)
+draw :: (Monad m, P.Proxy p) => StateP [a] p () (Maybe a) y' y m (Maybe a)
 draw = do
     s <- get
     case s of
-        []   -> request ()
+        []   -> P.request ()
         a:as -> do
             put as
             return (Just a)
 
 -- | Push an element back onto the leftovers buffer
-unDraw :: (Monad m, Proxy p) => a -> StateP [a] p x' x y' y m ()
+unDraw :: (Monad m, P.Proxy p) => a -> StateP [a] p x' x y' y m ()
 unDraw a = modify (a:)
 
 -- | Peek at the next element without consuming it
-peek :: (Monad m, Proxy p) => StateP [a] p () (Maybe a) y' y m (Maybe a)
+peek :: (Monad m, P.Proxy p) => StateP [a] p () (Maybe a) y' y m (Maybe a)
 peek = do
     ma <- draw
     case ma of
@@ -76,7 +78,7 @@ peek = do
     return ma
 
 -- | Check if at end of stream
-isEndOfInput :: (Monad m, Proxy p) => StateP [a] p () (Maybe a) y' y m Bool
+isEndOfInput :: (Monad m, P.Proxy p) => StateP [a] p () (Maybe a) y' y m Bool
 isEndOfInput = do
     ma <- peek
     case ma of
@@ -84,7 +86,7 @@ isEndOfInput = do
         Just _  -> return False
 
 -- | Drain all input
-skipAll :: (Monad m, Proxy p) => () -> StateP [a] p () (Maybe a) y' y m ()
+skipAll :: (Monad m, P.Proxy p) => () -> StateP [a] p () (Maybe a) y' y m ()
 skipAll () = loop
   where
     loop = do
@@ -95,59 +97,59 @@ skipAll () = loop
 
 -- | Pass up to the specified number of elements
 passUpToN
-    :: (Monad m, Proxy p)
+    :: (Monad m, P.Proxy p)
     => Int -> () -> StateP [a] p () (Maybe a) () (Maybe a) m r
 passUpToN n0 () = go n0
   where
     go n0 =
         if (n0 <= 0)
-        then forever $ respond Nothing
+        then forever $ P.respond Nothing
         else do
             ma <- draw
-            respond ma
+            P.respond ma
             case ma of
-                Nothing -> forever $ respond Nothing
+                Nothing -> forever $ P.respond Nothing
                 Just _  -> go (n0 - 1)
 
 -- | Pass as many consecutive elements satisfying a predicate as possible
 passWhile
-    :: (Monad m, Proxy p)
+    :: (Monad m, P.Proxy p)
     => (a -> Bool) -> () -> StateP [a] p () (Maybe a) () (Maybe a) m r
 passWhile pred () = go
   where
     go = do
         ma <- draw
         case ma of
-            Nothing -> forever $ respond Nothing
+            Nothing -> forever $ P.respond Nothing
             Just a  ->
                 if (pred a)
                 then do
-                    respond ma
+                    P.respond ma
                     go
                 else do
                     unDraw a
-                    forever $ respond Nothing
+                    forever $ P.respond Nothing
 
 {-| Guard a pipe from terminating by wrapping every output in 'Just' and ending
     with a never-ending stream of 'Nothing's
 -}
-wrap :: (Monad m, Proxy p) => p a' a b' b m r -> p a' a b' (Maybe b) m s
-wrap p = runIdentityP $ do
-    IdentityP p //> \b -> respond (Just b)
-    forever $ respond Nothing
+wrap :: (Monad m, P.Proxy p) => p a' a b' b m r -> p a' a b' (Maybe b) m s
+wrap p = P.runIdentityP $ do
+    P.IdentityP p //> \b -> P.respond (Just b)
+    forever $ P.respond Nothing
 
 {-| Compose 'unwrap' downstream of a guarded pipe to unwrap all 'Just's and
     terminate on the first 'Nothing'
 -}
-unwrap :: (Monad m, Proxy p) => x -> p x (Maybe a) x a m ()
-unwrap x = runIdentityP (go x)
+unwrap :: (Monad m, P.Proxy p) => x -> p x (Maybe a) x a m ()
+unwrap x = P.runIdentityP (go x)
   where
     go x = do
-        ma <- request x
+        ma <- P.request x
         case ma of
             Nothing -> return ()
             Just a  -> do
-                x2 <- respond a
+                x2 <- P.respond a
                 go x2
 
 {-| Lift a 'Maybe'-oblivious pipe to a 'Maybe'-aware pipe by auto-forwarding
@@ -158,14 +160,14 @@ unwrap x = runIdentityP (go x)
 > fmapPull pull = pull
 -}
 fmapPull
-    :: (Monad m, Proxy p)
+    :: (Monad m, P.Proxy p)
     => (x -> p x        a  x        b  m r)
     -> (x -> p x (Maybe a) x (Maybe b) m r)
 fmapPull f = bindPull (f >-> returnPull)
 
 -- | Wrap all values in 'Just'
-returnPull :: (Monad m, Proxy p) => x -> p x a x (Maybe a) m r
-returnPull = mapD Just
+returnPull :: (Monad m, P.Proxy p) => x -> p x a x (Maybe a) m r
+returnPull = P.mapD Just
 
 {-| Lift a 'Maybe'-generating pipe to a 'Maybe'-transforming pipe by
     auto-forwarding all 'Nothing's
@@ -187,16 +189,16 @@ Or equivalently:
 > bindPull (f >-> bindPull g) = bindPull f >-> bindPull g
 -}
 bindPull
-    :: (Monad m, Proxy p)
+    :: (Monad m, P.Proxy p)
     => (x -> p x        a  x (Maybe b) m r)
     -> (x -> p x (Maybe a) x (Maybe b) m r)
-bindPull f = runIdentityP . (up \>\ IdentityP . f)
+bindPull f = P.runIdentityP . (up \>\ P.IdentityP . f)
   where
     up a' = do
-        ma <- request a'
+        ma <- P.request a'
         case ma of
             Nothing -> do
-                a'2 <- respond Nothing
+                a'2 <- P.respond Nothing
                 up a'2
             Just a  -> return a
 
@@ -209,7 +211,7 @@ bindPull f = runIdentityP . (up \>\ IdentityP . f)
 > zoom id = id
 -}
 zoom
-    :: (Monad m, Proxy p)
+    :: (Monad m, P.Proxy p)
     => ((s2 -> (s2, s2)) -> (s1 -> (s2, s1)))
     -- ^ Lens' s1 s2
     -> StateP s2 p a' a b' b m r
@@ -218,21 +220,21 @@ zoom
     -- ^ Global state
 zoom lens p = StateP $ \s2_0 ->
     let (s1_0, s2_0') = lens (\x -> (x, x)) s2_0
-    in  (up >\\ thread_P (unStateP p s1_0) s2_0' //> dn) ?>= nx
+    in  (up >\\ P.thread_P (unStateP p s1_0) s2_0' //> dn) ?>= nx
   where
     up ((a', s1), s2) =
         let (_, s2') = lens (\x -> (x, s1)) s2
-        in  request (a', s2') ?>= \(a, s2'') ->
+        in  P.request (a', s2') ?>= \(a, s2'') ->
             let (s1', s2''') = lens (\x -> (x, x)) s2''
-            in  return_P ((a, s1'), s2''')
+            in  P.return_P ((a, s1'), s2''')
     dn ((b, s1), s2) =
         let (_, s2') = lens (\x -> (x, s1)) s2
-        in  respond (b, s2') ?>= \(b', s2'') ->
+        in  P.respond (b, s2') ?>= \(b', s2'') ->
             let (s1', s2''') = lens (\x -> (x, x)) s2''
-            in  return_P ((b', s1'), s2''')
+            in  P.return_P ((b', s1'), s2''')
     nx ((r, s1), s2) =
         let (_, s2') = lens (\x -> (x, s1)) s2
-        in  return_P (r, s2')
+        in  P.return_P (r, s2')
 
 {-| A lens to the first element of a pair
 
