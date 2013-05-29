@@ -47,23 +47,23 @@ instance (Monad m, Proxy p) => S.MonadState s (StateP s p a' a b' b m) where
     put = put
 
 -- | Like @request ()@, except try to use the leftovers buffer first
-draw :: (Monad m, Proxy p) => StateP [a] p () a y' y m (Maybe a)
+draw :: (Monad m, Proxy p) => StateP [Maybe a] p () (Maybe a) y' y m (Maybe a)
 draw = do
     s <- get
     case s of
-        []   -> request () >>= return . Just
+        []   -> request ()
         ma:mas -> do
             put mas
-            return (Just ma)
+            return ma
 
 -- | Push an element back onto the leftovers buffer
-unDraw :: (Monad m, Proxy p) => a -> StateP [a] p x' x y' y m ()
-unDraw a = modify (a:)
+unDraw :: (Monad m, Proxy p) => a -> StateP [Maybe a] p x' x y' y m ()
+unDraw a = modify (Just a:)
 
 -- | Draw an element or die trying
 drawIt
     :: (Monad m, Proxy p)
-    => StateP [a] (EitherP SomeException p) () a y' y m a
+    => StateP [Maybe a] (EitherP SomeException p) () (Maybe a) y' y m a
 drawIt = do
     ma <- draw
     case ma of
@@ -72,7 +72,7 @@ drawIt = do
         Just a  -> return a
 
 -- | Peek at the next element without consuming it
-peek :: (Monad m, Proxy p) => StateP [a] p () a y' y m (Maybe a)
+peek :: (Monad m, Proxy p) => StateP [Maybe a] p () (Maybe a) y' y m (Maybe a)
 peek = do
     ma <- draw
     case ma of
@@ -82,7 +82,7 @@ peek = do
 
 -- | Check if at end of stream
 isEndOfInput
-    :: (Monad m, Proxy p) => StateP [a] p () a y' y m Bool
+    :: (Monad m, Proxy p) => StateP [Maybe a] p () (Maybe a) y' y m Bool
 isEndOfInput = do
     ma <- peek
     case ma of
@@ -90,7 +90,7 @@ isEndOfInput = do
         Just _  -> return False
 
 -- | Drain all input
-skipAll :: (Monad m, Proxy p) => () -> StateP [a] p () a y' y m ()
+skipAll :: (Monad m, Proxy p) => () -> StateP [Maybe a] p () (Maybe a) y' y m ()
 skipAll () = loop
   where
     loop = do
@@ -102,7 +102,7 @@ skipAll () = loop
 -- | Pass up to the specified number of elements
 passUpToN
     :: (Monad m, Proxy p)
-    => Int -> () -> StateP [a] p () a () (Maybe a) m r
+    => Int -> () -> StateP [Maybe a] p () (Maybe a) () (Maybe a) m r
 passUpToN n0 () = go n0
   where
     go n0 =
@@ -118,19 +118,21 @@ passUpToN n0 () = go n0
 -- | Pass as many consecutive elements satisfying a predicate as possible
 passWhile
     :: (Monad m, Proxy p)
-    => (a -> Bool) -> () -> StateP [a] p () a () a m ()
+    => (a -> Bool) -> () -> StateP [Maybe a] p () (Maybe a) () (Maybe a) m r
 passWhile pred () = go
   where
     go = do
         ma <- draw
         case ma of
-            Nothing -> return ()
+            Nothing -> forever $ respond Nothing
             Just a  ->
                 if (pred a)
                 then do
-                    respond a
+                    respond ma
                     go
-                else unDraw a
+                else do
+                    unDraw a
+                    forever $ respond Nothing
 
 -- | Parsing failed.  The 'String' describes the nature of the parse failure
 newtype ParseFailure = ParseFailure String deriving (Show, Typeable)
