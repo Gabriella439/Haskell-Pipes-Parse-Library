@@ -1,4 +1,9 @@
--- | Core primitives for parsing
+{-| Parsing utilities for proxies
+
+    This module also provides an orphan 'S.MonadState' instance for 'StateP':
+
+> instance (Monad m, Proxy p) => MonadState s (StateP s p a' a b' b m) where ...
+-}
 
 {-# LANGUAGE FlexibleInstances, MultiParamTypeClasses #-}
 
