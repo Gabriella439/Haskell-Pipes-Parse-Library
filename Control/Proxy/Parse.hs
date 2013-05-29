@@ -16,6 +16,7 @@ module Control.Proxy.Parse (
     -- * Utilities
     peek,
     isEndOfInput,
+    drawAll,
     skipAll,
     passUpTo,
     passWhile,
@@ -99,17 +100,27 @@ isEndOfInput = do
         Nothing -> return True
         Just _  -> return False
 
--- | Drain all input
-skipAll :: (Monad m, P.Proxy p) => () -> StateP [a] p () (Maybe a) y' y m ()
-skipAll () = loop
+-- | Fold all input into a list
+drawAll :: (Monad m, P.Proxy p) => () -> StateP [a] p () (Maybe a) y' y m [a]
+drawAll () = go id
   where
-    loop = do
+    go diffAs = do
+        ma <- draw
+        case ma of
+            Nothing -> return (diffAs [])
+            Just a  -> go (diffAs . (a:))
+
+-- | Drain the input completely, discarding all values
+skipAll :: (Monad m, P.Proxy p) => () -> StateP [a] p () (Maybe a) y' y m ()
+skipAll () = go
+  where
+    go = do
         ma <- draw
         case ma of
             Nothing -> return ()
-            Just _  -> loop
+            Just _  -> go
 
--- | Pass up to the specified number of elements
+-- | Transmit up to the specified number of elements
 passUpTo
     :: (Monad m, P.Proxy p)
     => Int -> () -> P.Pipe (StateP [a] p) (Maybe a) (Maybe a) m r
@@ -125,7 +136,7 @@ passUpTo n0 () = go n0
                 Nothing -> forever $ P.respond Nothing
                 Just _  -> go (n0 - 1)
 
--- | Pass as many consecutive elements satisfying a predicate as possible
+-- | Transmit as many consecutive elements satisfying a predicate as possible
 passWhile
     :: (Monad m, P.Proxy p)
     => (a -> Bool) -> () -> P.Pipe (StateP [a] p) (Maybe a) (Maybe a) m r
