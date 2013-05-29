@@ -17,7 +17,7 @@ module Control.Proxy.Parse (
     peek,
     isEndOfInput,
     skipAll,
-    passUpToN,
+    passUpTo,
     passWhile,
 
     -- * Adapters
@@ -108,10 +108,10 @@ skipAll () = loop
             Just _  -> loop
 
 -- | Pass up to the specified number of elements
-passUpToN
+passUpTo
     :: (Monad m, P.Proxy p)
     => Int -> () -> P.Pipe (StateP [a] p) (Maybe a) (Maybe a) m r
-passUpToN n0 () = go n0
+passUpTo n0 () = go n0
   where
     go n0 =
         if (n0 <= 0)
