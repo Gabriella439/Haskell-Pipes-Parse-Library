@@ -33,7 +33,6 @@ module Control.Proxy.Parse (
     zoom,
     _fst,
     _snd,
-    (/\),
 
     -- * Re-exports
     module Control.Proxy.Trans.State
@@ -278,29 +277,3 @@ _fst f (a, x) = fmap (\b -> (b, x)) (f a)
 -}
 _snd :: (Functor f) => (a -> f b) -> ((x, a) -> f (x, b))
 _snd f (x, a) = fmap (\b -> (x, b)) (f a)
-
-{-| Pair up two lenses
-
-> (/\) :: Lens' c a -> Lens' c b -> Lens' c (a, b)
-
-> _fst /\ _snd = id
--}
-(/\)
-    :: (Functor f)
-    => ((a -> (a, a)) -> (c -> (a, c)))
-    -- ^ Lens' c a
-    -> ((b -> (b, b)) -> (c -> (b, c)))
-    -- ^ Lens' c b
-    -> (((a, b) -> f (a, b)) -> (c -> f c))
-    -- ^ Lens' c (a, b)
-(lens1 /\ lens2) f c0 =
-    let (a, _) = lens1 (\a_ -> (a_, a_)) c0
-        (b, _) = lens2 (\b_ -> (b_, b_)) c0
-        fab = f (a, b)
-    in  fmap (\(a, b) ->
-            let (_, c1) = lens1 (\a_ -> (a_, a)) c0
-                (_, c2) = lens2 (\b_ -> (b_, b)) c1
-            in  c2
-            ) fab
-
-infixl 7 /\
