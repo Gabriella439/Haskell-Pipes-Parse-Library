@@ -33,7 +33,20 @@ module Control.Proxy.Parse (
 
 import qualified Control.Monad.State.Class as S
 import Control.Proxy
-import Control.Proxy.Trans.State
+import Control.Proxy.Trans.State (
+    StateP(StateP, unStateP),
+    state,
+    stateT,
+    runStateP,
+    runStateK,
+    evalStateP,
+    evalStateK,
+    execStateP,
+    execStateK,
+    get,
+    put,
+    modify,
+    gets )
 
 instance (Monad m, Proxy p) => S.MonadState s (StateP s p a' a b' b m) where
     get = get
