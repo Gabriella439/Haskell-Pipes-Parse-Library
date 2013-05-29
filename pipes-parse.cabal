@@ -14,15 +14,16 @@ Description: This package defines the generic machinery necessary for common
     .
     * /Push-back/: Save unused input for later steps
     .
-    * /Lenses/: Mix proxies with different leftover buffers using lenses
+    * /End of input/: Detect and handle end of input
+    *
+    * /Lens Support/: Mix proxies with different leftover buffers using lenses
     .
-    * /Compatibility/: Transparently upgrade 'Maybe'-oblivious proxies
+    * /Compatibility/: Transparently pgrade proxies to work with @pipes-parse@
     .
     Import @Control.Proxy.Parse@ to use this library.
     .
     Read @Control.Proxy.Parse.Tutorial@ for an introductory tutorial.
 Category: Control, Pipes, Proxies, Parsing
-Tested-With: GHC ==7.4.1
 Source-Repository head
     Type: git
     Location: https://github.com/Gabriel439/Haskell-Pipes-Parse-Library
@@ -33,5 +34,6 @@ Library
         pipes >= 3.3     && < 3.4,
         mtl   >= 2.0.1.0 && < 2.2
     Exposed-Modules:
-        Control.Proxy.Parse
+        Control.Proxy.Parse,
+        Control.Proxy.Parse.Tutorial
     GHC-Options: -O2

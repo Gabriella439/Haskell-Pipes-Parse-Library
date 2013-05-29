@@ -35,7 +35,8 @@ module Control.Proxy.Parse (
     _snd,
 
     -- * Re-exports
-    module Control.Proxy.Trans.State
+    module Control.Proxy.Trans.State,
+    module Data.Monoid
     ) where
 
 import Control.Monad (forever)
@@ -56,6 +57,7 @@ import Control.Proxy.Trans.State (
     put,
     modify,
     gets )
+import Data.Monoid (Monoid(mempty, mappend))
 
 instance (Monad m, P.Proxy p) => S.MonadState s (StateP s p a' a b' b m) where
     get = get
