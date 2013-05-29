@@ -1,4 +1,4 @@
-{-| Parsing utilities for proxies
+{-| Parsing utilities for pipes
 
     This module also provides an orphan 'S.MonadState' instance for 'StateP':
 
@@ -62,8 +62,8 @@ instance (Monad m, P.Proxy p) => S.MonadState s (StateP s p a' a b' b m) where
     put = put
 
 {- $pushback
-    'unDraw' stores all leftovers in a 'StateP' buffer and 'draw' consults this
-    buffer before drawing new input from upstream.
+    'unDraw' stores all leftovers in a 'StateP' buffer and 'draw' retrieves
+    leftovers from this buffer before drawing new input from upstream.
 -}
 
 -- | Like @request ()@, except try to use the leftovers buffer first
@@ -110,7 +110,7 @@ skipAll () = loop
 -- | Pass up to the specified number of elements
 passUpToN
     :: (Monad m, P.Proxy p)
-    => Int -> () -> StateP [a] p () (Maybe a) () (Maybe a) m r
+    => Int -> () -> P.Pipe (StateP [a] p) (Maybe a) (Maybe a) m r
 passUpToN n0 () = go n0
   where
     go n0 =
@@ -126,7 +126,7 @@ passUpToN n0 () = go n0
 -- | Pass as many consecutive elements satisfying a predicate as possible
 passWhile
     :: (Monad m, P.Proxy p)
-    => (a -> Bool) -> () -> StateP [a] p () (Maybe a) () (Maybe a) m r
+    => (a -> Bool) -> () -> P.Pipe (StateP [a] p) (Maybe a) (Maybe a) m r
 passWhile pred () = go
   where
     go = do
