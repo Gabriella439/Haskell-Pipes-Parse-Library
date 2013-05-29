@@ -1,6 +1,6 @@
 -- | Core primitives for parsing
 
-{-# LANGUAGE FlexibleInstances, MultiParamTypeClasses, DeriveDataTypeable #-}
+{-# LANGUAGE FlexibleInstances, MultiParamTypeClasses #-}
 
 module Control.Proxy.Parse (
     -- * Leftovers
@@ -8,15 +8,11 @@ module Control.Proxy.Parse (
     unDraw,
 
     -- * Utilities
-    drawIt,
     peek,
     isEndOfInput,
     skipAll,
     passUpToN,
     passWhile,
-
-    -- * Parse Failures
-    ParseFailure(..),
 
     -- * Adapters
     wrap,
@@ -35,12 +31,9 @@ module Control.Proxy.Parse (
     module Control.Proxy.Trans.State
     ) where
 
-import Control.Exception (Exception(toException), SomeException)
 import qualified Control.Monad.State.Class as S
 import Control.Proxy
 import Control.Proxy.Trans.State
-import Control.Proxy.Trans.Either (EitherP, throw)
-import Data.Typeable (Typeable)
 
 instance (Monad m, Proxy p) => S.MonadState s (StateP s p a' a b' b m) where
     get = get
@@ -59,17 +52,6 @@ draw = do
 -- | Push an element back onto the leftovers buffer
 unDraw :: (Monad m, Proxy p) => a -> StateP [Maybe a] p x' x y' y m ()
 unDraw a = modify (Just a:)
-
--- | Draw an element or die trying
-drawIt
-    :: (Monad m, Proxy p)
-    => StateP [Maybe a] (EitherP SomeException p) () (Maybe a) y' y m a
-drawIt = do
-    ma <- draw
-    case ma of
-        Nothing -> liftP $ throw $ toException $
-            ParseFailure "drawIt: End of input"
-        Just a  -> return a
 
 -- | Peek at the next element without consuming it
 peek :: (Monad m, Proxy p) => StateP [Maybe a] p () (Maybe a) y' y m (Maybe a)
@@ -133,11 +115,6 @@ passWhile pred () = go
                 else do
                     unDraw a
                     forever $ respond Nothing
-
--- | Parsing failed.  The 'String' describes the nature of the parse failure
-newtype ParseFailure = ParseFailure String deriving (Show, Typeable)
-
-instance Exception ParseFailure
 
 {-| Guard a pipe from terminating by wrapping every output in 'Just' and ending
     with a never-ending stream of 'Nothing's
