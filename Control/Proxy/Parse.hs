@@ -8,7 +8,8 @@
 {-# LANGUAGE FlexibleInstances, MultiParamTypeClasses #-}
 
 module Control.Proxy.Parse (
-    -- * Leftovers
+    -- * Pushback and Leftovers
+    -- $pushback
     draw,
     unDraw,
 
@@ -20,6 +21,7 @@ module Control.Proxy.Parse (
     passWhile,
 
     -- * Adapters
+    -- $adapters
     wrap,
     unwrap,
     fmapPull,
@@ -27,6 +29,7 @@ module Control.Proxy.Parse (
     bindPull,
 
     -- * Lenses
+    -- $lenses
     zoom,
     _fst,
     _snd,
@@ -58,6 +61,11 @@ import Control.Proxy.Trans.State (
 instance (Monad m, P.Proxy p) => S.MonadState s (StateP s p a' a b' b m) where
     get = get
     put = put
+
+{- $pushback
+    'unDraw' stores all leftovers in a 'StateP' buffer and 'draw' consults this
+    buffer before drawing new input from upstream.
+-}
 
 -- | Like @request ()@, except try to use the leftovers buffer first
 draw :: (Monad m, P.Proxy p) => StateP [a] p () (Maybe a) y' y m (Maybe a)
@@ -135,6 +143,13 @@ passWhile pred () = go
                     unDraw a
                     forever $ P.respond Nothing
 
+{- $adapters
+    Use 'wrap' and 'unwrap' to convert between guarded and unguarded pipes.
+
+    'fmapPull', 'returnPull', and 'bindPull' promote compatibility with
+    existing utilities that are not 'Maybe' aware.
+-}
+
 {-| Guard a pipe from terminating by wrapping every output in 'Just' and ending
     with a never-ending stream of 'Nothing's
 -}
@@ -206,6 +221,11 @@ bindPull f = P.runIdentityP . (up \>\ P.IdentityP . f)
                 a'2 <- P.respond Nothing
                 up a'2
             Just a  -> return a
+
+{- $lenses
+    Use 'zoom', '_fst', and '_snd' to mix pipes that have different leftover
+    buffers or to isolate leftover buffers of different parsing stages.
+-}
 
 {-| 'zoom' in on a sub-state using a @Lens@
 
