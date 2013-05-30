@@ -69,7 +69,10 @@ instance (Monad m, P.Proxy p) => S.MonadState s (StateP s p a' a b' b m) where
     leftovers from this buffer before drawing new input from upstream.
 -}
 
--- | Like @request ()@, except try to use the leftovers buffer first
+{-| Like @request ()@, except try to use the leftovers buffer first
+
+    A 'Nothing' return value indicates end of input.
+-}
 draw :: (Monad m, P.Proxy p) => StateP [a] p () (Maybe a) y' y m (Maybe a)
 draw = do
     s <- get
@@ -92,7 +95,7 @@ peek = do
         Just a  -> unDraw a
     return ma
 
--- | Check if at end of stream
+-- | Check if at end of input stream.
 isEndOfInput :: (Monad m, P.Proxy p) => StateP [a] p () (Maybe a) y' y m Bool
 isEndOfInput = do
     ma <- peek
@@ -110,7 +113,7 @@ drawAll () = go id
             Nothing -> return (diffAs [])
             Just a  -> go (diffAs . (a:))
 
--- | Drain the input completely, discarding all values
+-- | Consume the input completely, discarding all values
 skipAll :: (Monad m, P.Proxy p) => () -> StateP [a] p () (Maybe a) y' y m ()
 skipAll () = go
   where
@@ -120,7 +123,7 @@ skipAll () = go
             Nothing -> return ()
             Just _  -> go
 
--- | Transmit up to the specified number of elements
+-- | Forward up to the specified number of elements downstream
 passUpTo
     :: (Monad m, P.Proxy p)
     => Int -> () -> P.Pipe (StateP [a] p) (Maybe a) (Maybe a) m r
@@ -136,7 +139,9 @@ passUpTo n0 () = go n0
                 Nothing -> forever $ P.respond Nothing
                 Just _  -> go (n0 - 1)
 
--- | Transmit as many consecutive elements satisfying a predicate as possible
+{-| Forward downstream as many consecutive elements satisfying a predicate as
+    possible
+-}
 passWhile
     :: (Monad m, P.Proxy p)
     => (a -> Bool) -> () -> P.Pipe (StateP [a] p) (Maybe a) (Maybe a) m r
@@ -163,7 +168,7 @@ passWhile pred () = go
 -}
 
 {-| Guard a pipe from terminating by wrapping every output in 'Just' and ending
-    with a never-ending stream of 'Nothing's
+    with a never-ending stream of 'Nothing's.
 -}
 wrap :: (Monad m, P.Proxy p) => p a' a b' b m r -> p a' a b' (Maybe b) m s
 wrap p = P.runIdentityP $ do
@@ -171,7 +176,7 @@ wrap p = P.runIdentityP $ do
     forever $ P.respond Nothing
 
 {-| Compose 'unwrap' downstream of a guarded pipe to unwrap all 'Just's and
-    terminate on the first 'Nothing'
+    terminate on the first 'Nothing'.
 -}
 unwrap :: (Monad m, P.Proxy p) => x -> p x (Maybe a) x a m ()
 unwrap x = P.runIdentityP (go x)
@@ -185,7 +190,7 @@ unwrap x = P.runIdentityP (go x)
                 go x2
 
 {-| Lift a 'Maybe'-oblivious pipe to a 'Maybe'-aware pipe by auto-forwarding
-    all 'Nothing's
+    all 'Nothing's.
 
 > fmapPull f >-> fmapPull g = fmapPull (f >-> g)
 >
@@ -197,7 +202,7 @@ fmapPull
     -> (x -> p x (Maybe a) x (Maybe b) m r)
 fmapPull f = bindPull (f >-> returnPull)
 
--- | Wrap all values in 'Just'
+-- | Wrap all values flowing downstream in 'Just'.
 returnPull :: (Monad m, P.Proxy p) => x -> p x a x (Maybe a) m r
 returnPull = P.mapD Just
 
@@ -239,7 +244,7 @@ bindPull f = P.runIdentityP . (up \>\ P.IdentityP . f)
     buffers or to isolate leftover buffers of different parsing stages.
 -}
 
-{-| 'zoom' in on a sub-state using a @Lens@
+{-| 'zoom' in on a sub-state using a 'Control.Lens.Lens'.
 
 > zoom :: Lens' s1 s2 -> StateP s2 p a' a b' b m r -> StateP s1 p a' a b' b m r
 
@@ -250,7 +255,7 @@ bindPull f = P.runIdentityP . (up \>\ P.IdentityP . f)
 zoom
     :: (Monad m, P.Proxy p)
     => ((s2 -> (s2, s2)) -> (s1 -> (s2, s1)))
-    -- ^ Lens' s1 s2
+    -- ^ 'Control.Lens.Lens'' s1 s2
     -> StateP s2 p a' a b' b m r
     -- ^ Local state
     -> StateP s1 p a' a b' b m r
@@ -273,7 +278,7 @@ zoom lens p = StateP $ \s2_0 ->
         let (_, s2') = lens (\x -> (x, s1)) s2
         in  P.return_P (r, s2')
 
-{-| A lens to the first element of a pair
+{-| A 'Control.Lens.Lens' to the first element of a pair.
 
     Like @_1@, but more monomorphic
 
@@ -282,7 +287,7 @@ zoom lens p = StateP $ \s2_0 ->
 _fst :: (Functor f) => (a -> f b) -> ((a, x) -> f (b, x))
 _fst f (a, x) = fmap (\b -> (b, x)) (f a)
 
-{-| A lens to the second element of a pair
+{-| A 'Control.Lens.Lens' to the second element of a pair.
 
     Like @_2@, but more monomorphic
 
