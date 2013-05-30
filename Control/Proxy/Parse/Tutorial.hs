@@ -1,4 +1,4 @@
-{-| This module provides a tutorial for the @pipes-concurrency@ library
+{-| This module provides a tutorial for the @pipes-parse@ library
 
     This tutorial assumes that you have read the @pipes@ tutorial in
     @Control.Proxy.Tutorial@.
