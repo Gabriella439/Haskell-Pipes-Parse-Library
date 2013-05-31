@@ -97,7 +97,7 @@ Nothing
 
     We can use this to lift 'printD' to operate on the original stream:
 
->>> runProxy $ wrap . enumFromToS 1 >-> fmapPull printD >-> unwrap
+>>> runProxy $ wrap . enumFromToS 1 3 >-> fmapPull printD >-> unwrap
 1
 2
 3
