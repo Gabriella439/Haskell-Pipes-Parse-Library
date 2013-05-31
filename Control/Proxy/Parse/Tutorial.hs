@@ -42,7 +42,8 @@ import Control.Proxy.Parse
 
     * Tools to combine parsing stages with diverse or isolated leftover buffers
 
-    Use these utilities to parse and validate input in constant memory.
+    Use these utilities to parse and validate streaming input in constant
+    memory.
 -}
 
 {- $eof
@@ -123,10 +124,10 @@ Nothing
 
 > unDraw :: (Monad m, Proxy p) => a -> StateP [a] p x' x y' y m ()
 
-    These both use a leftovers buffer of type @[a]@ stored in a 'StateP' layer.
-    'unDraw' prepends elements to this list of leftovers and 'draw' will consume
-    elements from this leftovers list until it is empty before requesting new
-    input from upstream:
+    These both use a last-in-first-out (LIFO) leftovers buffer of type @[a]@
+    stored in a 'StateP' layer.  'unDraw' prepends elements to this list of
+    leftovers and 'draw' will consume elements from the head of the leftovers
+    list until it is empty before requesting new input from upstream:
 
 > consumer :: (Proxy p) => () -> Consumer (StateP [a] p) (Maybe Int) IO ()
 > consumer () = do
@@ -176,7 +177,7 @@ Just 99
     We might expect the following code to yield chunks of three elements at a
     time:
 
-> chunks :: (Monad m, Proxy p) => () -> Pipe (StateP [a] p) a [a] m ()
+> chunks :: (Monad m, Proxy p) => () -> Pipe (StateP [a] p) (Maybe a) [a] m ()
 > chunks () = loop
 >   where
 >     loop = do
@@ -196,17 +197,20 @@ Just 99
     @chunks@ behaves strangely because 'drawAll' shares the same leftovers
     buffer as 'passUpTo' and 'isEndOfInput'.  After the first chunk completes,
     'isEndOfInput' peeks at the next value, @4@, and immediately 'unDraw's the
-    value.  'drawAll' retrieves this value before consulting 'passUpTo' which is
-    why every subsequent list contains an extra element.
+    value.  'drawAll' retrieves this undrawn value from the leftovers before
+    consulting 'passUpTo' which is why every subsequent list contains an extra
+    element.
 
     We often don't want composed parsing stages to share the same leftovers
     buffer, and @pipes-parse@ provides a way to reflect that in the types.  We
     can change the type of @chunks@ to:
 
-> chunks :: (Monad m, Proxy p) => () -> Pipe (StateP ([a], [a]) p) a [a] m ()
->                                                      ^    ^
->                                                      |    |
->                             Two leftovers buffers ---+----+
+> chunks
+>     :: (Monad m, Proxy p)
+>     => () -> Pipe (StateP ([a], [a]) p) (Maybe a) [a] m ()
+> --                          ^    ^
+> --                          |    |
+> -- Two leftovers buffers ---+----+
 
     Now our 'StateP' layer holds two separate leftovers buffers, and we can
     specify which buffer each parsing primitive should interact with using
@@ -282,7 +286,7 @@ Just 99
 > zoom :: Lens' s1 s2 -> StateP s2 p a' a b' b m r -> StateP s1 p a' a b' b m r
 
     'zoom' behaves like the function of the same name from the @lens@ package,
-    zooming in on a substate using the provided lens.  When we give it the
+    zooming in on a sub-state using the provided lens.  When we give it the
     '_fst' lens we zoom in on the first element of a tuple:
 
 > _fst :: Lens' (a, b) a
@@ -319,7 +323,8 @@ Just 99
 >
 > p = zoom _buf1 . p1 >-> zoom _buf2 . p2 >-> zoom _buf3 . p3
 
-    'zoom' works seamlessly with all lenses from the @lens@ package.
+    'zoom' also works seamlessly with all lenses from the @lens@ package, but
+    you don't need a @lens@ dependency to use @pipes-parse@.
 -}
 
 {- $conclusion
