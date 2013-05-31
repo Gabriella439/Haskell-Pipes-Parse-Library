@@ -29,6 +29,7 @@ module Control.Proxy.Parse (
     _snd,
 
     -- * Re-exports
+    -- $reexports
     module Control.Proxy.Trans.State,
     module Data.Monoid
     ) where
@@ -50,7 +51,7 @@ import Control.Proxy.Trans.State (
     put,
     modify,
     gets )
-import Data.Monoid (Monoid(mempty, mappend))
+import Data.Monoid (mempty)
 
 {- $pushback
     'unDraw' stores all leftovers in a 'StateP' buffer and 'draw' retrieves
@@ -283,3 +284,9 @@ _fst f (a, x) = fmap (\b -> (b, x)) (f a)
 -}
 _snd :: (Functor f) => (a -> f b) -> ((x, a) -> f (x, b))
 _snd f (x, a) = fmap (\b -> (x, b)) (f a)
+
+{- $reexports
+    "Control.Proxy.Trans.State" re-exports all functions.
+
+    "Data.Monoid" re-exports 'mempty'.
+-}
