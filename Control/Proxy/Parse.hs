@@ -246,7 +246,7 @@ bindPull f = P.runIdentityP . (up \>\ P.IdentityP . f)
     buffers or to isolate leftover buffers of different parsing stages.
 -}
 
-{-| 'zoom' in on a sub-state using a 'Control.Lens.Lens'.
+{-| 'zoom' in on a sub-state using a @Lens'@.
 
 > zoom :: Lens' s1 s2 -> StateP s2 p a' a b' b m r -> StateP s1 p a' a b' b m r
 
@@ -257,7 +257,7 @@ bindPull f = P.runIdentityP . (up \>\ P.IdentityP . f)
 zoom
     :: (Monad m, P.Proxy p)
     => ((s2 -> (s2, s2)) -> (s1 -> (s2, s1)))
-    -- ^ 'Control.Lens.Lens'' s1 s2
+    -- ^ @Lens'@ s1 s2
     -> StateP s2 p a' a b' b m r
     -- ^ Local state
     -> StateP s1 p a' a b' b m r
@@ -281,7 +281,7 @@ zoom lens = \p -> StateP $ \s2_0 ->
         in  P.return_P (r, s2')
 {-# INLINABLE zoom #-}
 
-{-| A 'Control.Lens.Lens' to the first element of a pair.
+{-| A @Lens'@ to the first element of a pair.
 
     Like @_1@, but more monomorphic
 
@@ -291,7 +291,7 @@ _fst :: (Functor f) => (a -> f b) -> ((a, x) -> f (b, x))
 _fst = \f (a, x) -> fmap (\b -> (b, x)) (f a)
 {-# INLINABLE _fst #-}
 
-{-| A 'Control.Lens.Lens' to the second element of a pair.
+{-| A @Lens'@ to the second element of a pair.
 
     Like @_2@, but more monomorphic
 
