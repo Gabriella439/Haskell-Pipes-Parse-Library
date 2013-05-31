@@ -152,7 +152,7 @@ passWhile pred () = go
     Use 'wrap' and 'unwrap' to convert between guarded and unguarded pipes.
 
     'fmapPull', 'returnPull', and 'bindPull' promote compatibility with
-    existing utilities that are not 'Maybe' aware.
+    existing utilities that are not 'Maybe'-aware.
 -}
 
 {-| Guard a pipe from terminating by wrapping every output in 'Just' and ending
