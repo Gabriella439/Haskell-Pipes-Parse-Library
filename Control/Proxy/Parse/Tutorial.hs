@@ -178,7 +178,7 @@ Just 99
 
 > -- Transmit up to the specified number of elements
 > passUpTo
->     :: (Monad m, Proxy p) 
+>     :: (Monad m, Proxy p)
 >     => Int -> () -> Pipe (StateP [a] p) (Maybe a) (Maybe a) m r
 >
 > -- Fold all input into a list
@@ -256,13 +256,15 @@ Just 99
 -}
 
 {- $diverse
-    This trick is also useful for mixing stages with different leftover types,
-    such as the following two pipes:
+    When a piple needs to parse of multiple types in sequential sections then
+    each type needs its own pushback buffer. Here the zoom tirck comes to the
+    rescue again. Below `adder` needs a buffer for `Int`s and `tallyLength` needs
+    a buffer for `String`s.
 
 > adder
 >     :: (Monad m, Proxy p) => () -> Consumer (StateP [Int] p) (Maybe Int) m Int
 > adder () = fmap sum $ drawAll ()
-> 
+>
 > tallyLength
 >     :: (Monad m, Proxy p)
 >     => () -> Pipe (StateP [String] p) (Maybe String) (Maybe Int) m r
@@ -357,7 +359,7 @@ Just 99
     result directly:
 
 > parser
->     :: (Monad m, Proxy p) 
+>     :: (Monad m, Proxy p)
 >     => () -> Consumer (StateP [a] p) (Maybe a) m (Maybe a, Maybe a)
 > parser () = do
 >     mx <- draw
@@ -387,7 +389,7 @@ Just 99
 
 > import Control.Proxy
 > import Control.Proxy.Parse
-> 
+>
 > drawN
 >     :: (Monad m, Proxy p)
 >     => Int -> () -> Consumer (StateP [a] p) (Maybe a) m (Maybe [a])
@@ -408,7 +410,7 @@ Just 99
 >
 > MaybeP draw
 >     :: (Monad m, Proxy p) => Consumer (MaybeP (StateP [a] p) (Maybe a) m a
-> 
+>
 > replicateM n $ MaybeP draw
 >     :: (Monad m, Proxy p) => Consumer (MaybeP (StateP [a] p) (Maybe a) m [a]
 >
@@ -417,12 +419,12 @@ Just 99
 
     That was easy!  The solution also more closely matches our intention: \"Get
     @n@ values, using 'MaybeP' to gloss over the 'Nothing' details\".
-    
+
     Let's implement it:
 
 > import Control.Monad
 > import Control.Proxy.Trans.Maybe
-> 
+>
 > drawN
 >     :: (Monad m, Proxy p)
 >     => Int -> () -> StateP [a] p () (Maybe a) y' y m (Maybe [a])
