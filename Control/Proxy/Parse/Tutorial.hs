@@ -26,6 +26,15 @@ module Control.Proxy.Parse.Tutorial (
     -- * Lenses
     -- $lenses
 
+    -- * Return value
+    -- $return
+
+    -- * Error handling
+    -- $errors
+
+    -- * Nesting
+    -- $nesting
+
     -- * Conclusion
     -- $conclusion
     ) where
@@ -112,6 +121,10 @@ Nothing
 
     You can navigate even more complicated mixtures of 'Maybe'-aware and
     'Maybe'-oblivious code using 'bindPull' and 'returnPull'.
+
+    @pipes-parse@ requires no buy-in from the rest of the @pipes@ ecosystem
+    thanks to these theoretically-inspired adapter routines that automatically
+    lift existing pipes to interoperate with end-of-input protocols.
 -}
 
 {- $leftovers
@@ -269,14 +282,21 @@ Just 99
 >     => () -> Consumer (StateP ([String], [Int]) p) (Maybe String) m Int
 > combined = zoom _fst . tallyLength >-> zoom _snd . adder
 >
-> source :: (Monad m, Proxy p) => () -> Producer p (Maybe String) m ()
+> source :: (Monad m, Proxy p) => () -> Producer p String m ()
 > source = fromListS ["One", "Two", "Three"]
 
     ... which gives the correct behavior:
 
->>> runProxy $ evalStateK mempty $ source >-> combined
+>>> runProxy $ evalStateK mempty $ wrap . source >-> combined
 20
 
+    Moreover, you can use 'runStateK' if you want to keep the contents of both
+    leftovers buffer and reuse them later on:
+
+>>> runProxy $ runStateK mempty $ wrap . source >-> combined
+(20,([],[]))
+
+    ... although in this case both leftovers buffers were empty at the end.
 -}
 
 {- $lenses
@@ -327,14 +347,150 @@ Just 99
     you don't need a @lens@ dependency to use @pipes-parse@.
 -}
 
+{- $return
+    'wrap' allows you to return values directly from parsers because it produces
+    a polymorphic return value, @s@:
+
+> wrap :: (Monad m, Proxy p) => p a' a b' b m r -> p a' a b' (Maybe b) m s
+
+    This means that if you compose a parser downstream the parser can return the
+    result directly:
+
+> parser
+>     :: (Monad m, Proxy p) 
+>     => () -> Consumer (StateP [a] p) (Maybe a) m (Maybe a, Maybe a)
+> parser () = do
+>     mx <- draw
+>     my <- draw
+>     return (mx, my)  -- Return the result
+
+    The polymorphic return value of 'wrap' will type-check as anything,
+    including our parser's result:
+
+> session
+>     :: (Monad m, Proxy p)
+>     => () -> Session (StateP [Int] p) m (Maybe Int, Maybe Int)
+> session = wrap . enumFromToS 0 9 >-> parser
+
+    So we can run this 'Session' and retrieve the result directly from the
+    return value:
+
+>>> runProxy $ evalStateK session
+(Just 0, Just 1)
+
+-}
+
+{- $errors
+    'draw' returns a 'Nothing' if it reaches the end of input, but this makes
+    drawing multiple values tedious.  For example, if I want to draw three
+    values, I'd have to hand-write the following error-checking loop:
+
+> import Control.Proxy
+> import Control.Proxy.Parse
+> 
+> drawN
+>     :: (Monad m, Proxy p)
+>     => Int -> () -> Consumer (StateP [a] p) (Maybe a) m (Maybe [a])
+> drawN n0 () = loop n0 []
+>   where
+>     loop 0 as = return $ Just (reverse as)
+>     loop n as = do
+>         ma <- draw
+>         case ma of
+>             Nothing -> return Nothing
+>             Just a  -> loop (n - 1) (a:as)
+
+    Or do I?  Why not use 'MaybeP' (from @Control.Proxy.Trans.Maybe@) to
+    automate the 'Nothing' checks for me:
+
+> draw
+>     :: (Monad m, Proxy p) => Consumer (StateP [a] p) (Maybe a) m (Maybe a)
+>
+> MaybeP draw
+>     :: (Monad m, Proxy p) => Consumer (MaybeP (StateP [a] p) (Maybe a) m a
+> 
+> replicateM n $ MaybeP draw
+>     :: (Monad m, Proxy p) => Consumer (MaybeP (StateP [a] p) (Maybe a) m [a]
+>
+> runMaybeP $ replicateM n $ MaybeP draw
+>     :: (Monad m, Proxy p) => Consumer (StateP [a] p) (Maybe a) m (Maybe [a])
+
+    That was easy!  The solution also more closely matches our intention: \"Get
+    @n@ values, using 'MaybeP' to gloss over the 'Nothing' details\".
+    
+    Let's implement it:
+
+> import Control.Monad
+> import Control.Proxy.Trans.Maybe
+> 
+> drawN
+>     :: (Monad m, Proxy p)
+>     => Int -> () -> StateP [a] p () (Maybe a) y' y m (Maybe [a])
+> drawN n () = runMaybeP $ replicateM n $ MaybeP draw
+
+    ... and see if it works as advertised:
+
+>>> runProxy $ evalStateK mempty $ wrap . enumFromS   0   >-> drawN 4
+Just [0,1,2,3]
+>>> runProxy $ evalStateK mempty $ wrap . enumFromToS 0 2 >-> drawN 4
+Nothing
+
+    However, @pipes-parse@ does not provide any built-in support for
+    error-handling so that downstream libraries can select the error-handling
+    style of their choice.
+-}
+
+{- $nesting
+    @pipes-parse@ allows you to cleanly delimit the scope of sub-parsers by
+    restricting them to a subset of the stream, as the following example
+    illustrates:
+
+> import Control.Proxy
+> import Control.Proxy.Parse
+>
+> parser
+>     :: (Proxy p)
+>     => () -> Consumer (StateP [Int] p) (Maybe Int) IO ([Int], [Int])
+> parser () = do
+>     lift $ putStrLn "Skip the first three elements"
+>     (passUpTo 3 >-> skipAll) ()
+>     lift $ putStrLn "Restrict subParser to consecutive elements less than 10"
+>     (passWhile (< 10) >-> subParser) ()
+>
+> subParser
+>     :: (Proxy p)
+>     => () -> Consumer (StateP [Int] p) (Maybe Int) IO ([Int], [Int])
+> subParser () = do
+>     lift $ putStrLn "- Get the next four elements"
+>     xs <- (passUpTo 4 >-> drawAll) ()
+>     lift $ putStrLn "- Get the rest of the input"
+>     ys <- drawAll ()
+>     return (xs, ys)
+
+    The outer @parser@ correctly delimits the scope of the @subParser@ so that
+    the final 'drawAll' only consumes elements less than @10@:
+
+>>> runProxy $ evalStateK mempty $ wrap . enumFromS 0 >-> parser
+Skip the first three elements
+Restrict subParser to consecutive elements less than 10
+- Get the next four elements
+- Get the rest of the input
+([3,4,5,6],[7,8,9])
+
+-}
+
 {- $conclusion
     @pipes-parse@ provides standardized end-of-input and leftovers utilities for
     you to use in your @pipes@-based libraries.  Unlike other streaming
-    libraries, you wield more precise control over sharing and isolation of
-    leftovers buffers.  Also, @pipes-parse@ requires no buy-in from the rest of
-    the @pipes@ ecosystem thanks to compatibility routines like 'fmapPull' that
-    automatically lift existing pipes to interoperate with end-of-input
-    protocols.
+    libraries, you can:
+
+    * wield precise control over sharing and mixing of leftovers buffers,
+
+    * easily delimit parsers to subsets of the input,
+
+    * use convenient @pipes@ error-handling idioms like 'MaybeP', and
+
+    * ignore standardization, thanks to compatibility functions like 'fmapPull'.
 
     This library is intentionally minimal and datatype-specific parsers belong
     in derived libraries.  This makes @pipes-parse@ a very light-weight and
