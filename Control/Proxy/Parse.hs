@@ -1,7 +1,5 @@
 -- | Parsing utilities for pipes
 
-{-# LANGUAGE FlexibleInstances, MultiParamTypeClasses #-}
-
 module Control.Proxy.Parse (
     -- * Pushback and Leftovers
     -- $pushback
