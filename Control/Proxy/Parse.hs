@@ -1,9 +1,4 @@
-{-| Parsing utilities for pipes
-
-    This module also provides an orphan 'S.MonadState' instance for 'StateP':
-
-> instance (Monad m, Proxy p) => MonadState s (StateP s p a' a b' b m) where ...
--}
+-- | Parsing utilities for pipes
 
 {-# LANGUAGE FlexibleInstances, MultiParamTypeClasses #-}
 
@@ -41,7 +36,6 @@ module Control.Proxy.Parse (
     ) where
 
 import Control.Monad (forever)
-import qualified Control.Monad.State.Class as S
 import Control.Proxy ((>->), (\>\), (//>), (>\\), (?>=))
 import qualified Control.Proxy as P
 import Control.Proxy.Trans.State (
@@ -59,10 +53,6 @@ import Control.Proxy.Trans.State (
     modify,
     gets )
 import Data.Monoid (Monoid(mempty, mappend))
-
-instance (Monad m, P.Proxy p) => S.MonadState s (StateP s p a' a b' b m) where
-    get = get
-    put = put
 
 {- $pushback
     'unDraw' stores all leftovers in a 'StateP' buffer and 'draw' retrieves
