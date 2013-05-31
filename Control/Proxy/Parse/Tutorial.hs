@@ -36,13 +36,13 @@ import Control.Proxy.Parse
 {- $introduction
     @pipes-parse@ provides utilities commonly required for parsing streams:
 
-    * End of input utilities and conventions for the @pipes-ecosystem@
+    * End of input utilities and conventions for the @pipes@ ecosystem
 
     * Pushback and leftovers support for saving unused input
 
     * Tools to combine parsing stages with diverse or isolated leftover buffers
 
-    Use these utilities to parse and validate input in constant memory.
+    Use these utilities to parse, validate or discard input in constant memory.
 -}
 
 {- $eof
@@ -77,11 +77,10 @@ Nothing
     'unwrap' behaves like the inverse of 'wrap'.  Compose 'unwrap' downstream of
     a pipe to unwrap every 'Just' and terminate on the first 'Nothing':
 
->>> runProxy $ wrap . enumFromToS 1 3 >-> printD >-> unwrap
-Just 1
-Just 2
-Just 3
-Nothing
+>>> runProxy $ wrap . enumFromToS 1 3 >-> unwrap >-> printD
+1
+2
+3
 
 -}
 
@@ -101,6 +100,8 @@ Nothing
 1
 2
 3
+
+    We still use 'unwrap' downstream so that our pipeline terminates.
 
     This lifting cleanly distributes over composition and obeys the following
     laws:
@@ -157,14 +158,14 @@ Just 99
 {- $mix
     Why use 'mempty' instead of @[]@?  @pipes-parse@ lets you easily mix
     distinct leftovers buffers into the same 'StateP' layer and 'mempty' will
-    still do the correct thing when you use multiple buffers.
+    still do the correct thing when you use multiple buffers that are 'Monoid's.
 
     For example, let's say that we want to mix three of the @pipes-parse@
     utilities:
 
 > -- Transmit up to the specified number of elements
 > passUpTo
->     :: (Monad m, Proxy p) 
+>     :: (Monad m, Proxy p)
 >     => Int -> () -> Pipe (StateP [a] p) (Maybe a) (Maybe a) m r
 >
 > -- Fold all input into a list
@@ -245,7 +246,7 @@ Just 99
 > adder
 >     :: (Monad m, Proxy p) => () -> Consumer (StateP [Int] p) (Maybe Int) m Int
 > adder () = fmap sum $ drawAll ()
-> 
+>
 > tallyLength
 >     :: (Monad m, Proxy p)
 >     => () -> Pipe (StateP [String] p) (Maybe String) (Maybe Int) m r
