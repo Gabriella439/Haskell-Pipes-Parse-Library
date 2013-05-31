@@ -12,13 +12,13 @@ Synopsis: Parsing infrastructure for the pipes ecosystem
 Description: This package defines the generic machinery necessary for common
     parsing tasks using @pipes@:
     .
+    * /End of input/: Detect and handle end of input
+    .
     * /Push-back/: Save unused input for later steps
     .
-    * /End of input/: Detect and handle end of input
-    *
     * /Lens Support/: Mix proxies with different leftover buffers using lenses
     .
-    * /Compatibility/: Transparently pgrade proxies to work with @pipes-parse@
+    * /Compatibility/: Transparently upgrade proxies to work with @pipes-parse@
     .
     Import @Control.Proxy.Parse@ to use this library.
     .

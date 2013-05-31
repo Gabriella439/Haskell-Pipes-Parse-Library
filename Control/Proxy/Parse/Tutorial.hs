@@ -25,6 +25,9 @@ module Control.Proxy.Parse.Tutorial (
 
     -- * Lenses
     -- $lenses
+
+    -- * Conclusion
+    -- $conclusion
     ) where
 
 import Control.Proxy
@@ -71,8 +74,8 @@ Nothing
 
 > unwrap :: (Monad m, Proxy p) => x -> p x (Maybe a) x a m ()
 
-    Compose 'unwrap' downstream of a pipe to unwrap every 'Just' and terminate
-    on the first 'Nothing':
+    'unwrap' behaves like the inverse of 'wrap'.  Compose 'unwrap' downstream of
+    a pipe to unwrap every 'Just' and terminate on the first 'Nothing':
 
 >>> runProxy $ wrap . enumFromToS 1 3 >-> printD >-> unwrap
 Just 1
@@ -105,6 +108,9 @@ Nothing
 > fmapPull (f >-> g) = fmapPull f >-> fmapPull g
 >
 > fmapPull pull = pull
+
+    You can navigate even more complicated mixtures of 'Maybe'-aware and
+    'Maybe'-oblivious code using 'bindPull' and 'returnPull'.
 -}
 
 {- $leftovers
@@ -153,8 +159,8 @@ Just 99
     distinct leftovers buffers into the same 'StateP' layer and 'mempty' will
     still do the correct thing when you use multiple buffers.
 
-    For example, let's say that we want to mix two of the @pipes-parse@
-    utilities, 'passUpTo' and 'drawAll':
+    For example, let's say that we want to mix three of the @pipes-parse@
+    utilities:
 
 > -- Transmit up to the specified number of elements
 > passUpTo
@@ -163,8 +169,12 @@ Just 99
 >
 > -- Fold all input into a list
 > drawAll :: (Monad m, Proxy p) => () -> StateP [a] p () (Maybe a) y' y m [a]
+>
+> -- Check if at end of input stream
+> isEndOfInput :: (Monad m, Proxy p) => StateP [a] p () (Maybe a) y' y m Bool
 
-    We might expect this to yield chunks of three elements at a time:
+    We might expect the following code to yield chunks of three elements at a
+    time:
 
 > chunks :: (Monad m, Proxy p) => () -> Pipe (StateP [a] p) a [a] m ()
 > chunks () = loop
@@ -183,7 +193,7 @@ Just 99
 [8,9,10,11]
 [12,13,14,15]
 
-    @chunks@ behaves strangely because both 'drawAll' shares the same leftovers
+    @chunks@ behaves strangely because 'drawAll' shares the same leftovers
     buffer as 'passUpTo' and 'isEndOfInput'.  After the first chunk completes,
     'isEndOfInput' peeks at the next value, @4@, and immediately 'unDraw's the
     value.  'drawAll' retrieves this value before consulting 'passUpTo' which is
@@ -194,10 +204,13 @@ Just 99
     can change the type of @chunks@ to:
 
 > chunks :: (Monad m, Proxy p) => () -> Pipe (StateP ([a], [a]) p) a [a] m ()
+>                                                      ^    ^
+>                                                      |    |
+>                             Two leftovers buffers ---+----+
 
     Now our 'StateP' layer holds two separate leftovers buffers, and we can
-    specify which leftovers buffer each parsing primitive should interact with
-    using lenses:
+    specify which buffer each parsing primitive should interact with using
+    lenses:
 
 > chunks () = loop
 >   where
@@ -253,6 +266,7 @@ Just 99
 > combined = zoom _fst . tallyLength >-> zoom _snd . adder
 >
 > source :: (Monad m, Proxy p) => () -> Producer p (Maybe String) m ()
+> source = fromListS ["One", "Two", "Three"]
 
     ... which gives the correct behavior:
 
@@ -268,19 +282,19 @@ Just 99
 > zoom :: Lens' s1 s2 -> StateP s2 p a' a b' b m r -> StateP s1 p a' a b' b m r
 
     'zoom' behaves like the function of the same name from the @lens@ package,
-    zooming in on a substate of a global state using the provided lens.  When we
-    give it the '_fst' lens we zoom in on the first element of a tuple:
+    zooming in on a substate using the provided lens.  When we give it the
+    '_fst' lens we zoom in on the first element of a tuple:
 
 > _fst :: Lens' (a, b) a
 >
-> zoom _fst :: StateP l1 p a' a b' b m r -> StateP (l1, l2) p a' a b' b m r
+> zoom _fst :: StateP s1 p a' a b' b m r -> StateP (s1, s2) p a' a b' b m r
 
     ... and when we give it the '_snd' lens we zoom in on the second element of
     a tuple:
 
 > _snd :: Lens' (a, b) b
 >
-> zoom _snd :: StateP l2 p a' a b' b m r -> StateP (l1, l2) p a' a b' b m r
+> zoom _snd :: StateP s2 p a' a b' b m r -> StateP (s1, s2) p a' a b' b m r
 
     '_fst' and '_snd' are like '_1' and '_2' from the @lens@ package, except
     with a more monomorphic type.  This ensures that type inference works
@@ -305,9 +319,19 @@ Just 99
 >
 > p = zoom _buf1 . p1 >-> zoom _buf2 . p2 >-> zoom _buf3 . p3
 
-    'zoom' will work with all lenses from the @lens@ package.
+    'zoom' works seamlessly with all lenses from the @lens@ package.
+-}
 
-    FIXME: Perhaps remove MonadState instance or move it into @pipes@ since it's
-    unnecessary for mixing leftovers buffers.
-    lefto
+{- $conclusion
+    @pipes-parse@ provides standardized end-of-input and leftovers utilities for
+    you to use in your @pipes@-based libraries.  Unlike other streaming
+    libraries, you wield more precise control over sharing and isolation of
+    leftovers buffers.  Also, @pipes-parse@ requires no buy-in from the rest of
+    the @pipes@ ecosystem thanks to compatibility routines like 'fmapPull' that
+    automatically lift existing pipes to interoperate with end-of-input
+    protocols.
+
+    This library is intentionally minimal and datatype-specific parsers belong
+    in derived libraries.  This makes @pipes-parse@ a very light-weight and
+    stable dependency that you can use in your own projects.
 -}
