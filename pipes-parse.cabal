@@ -20,9 +20,9 @@ Description: This package defines the generic machinery necessary for common
     .
     * /Compatibility/: Transparently upgrade proxies to work with @pipes-parse@
     .
-    Import @Control.Proxy.Parse@ to use this library.
+    Import "Control.Proxy.Parse" to use this library.
     .
-    Read @Control.Proxy.Parse.Tutorial@ for an introductory tutorial.
+    Read "Control.Proxy.Parse.Tutorial" for an introductory tutorial.
 Category: Control, Pipes, Proxies, Parsing
 Source-Repository head
     Type: git
