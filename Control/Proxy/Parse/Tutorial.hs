@@ -256,10 +256,11 @@ Just 99
 -}
 
 {- $diverse
-    When a piple needs to parse of multiple types in sequential sections then
-    each type needs its own pushback buffer. Here the zoom tirck comes to the
-    rescue again. Below `adder` needs a buffer for `Int`s and `tallyLength` needs
-    a buffer for `String`s.
+    Suppose that we need to compose parsing pipes that have different input
+    types and therefore different types of leftovers buffers.  We can reuse the
+    same 'zoom' trick to mix parsers with differing buffers, such as the
+    following @adder@ parser which uses 'Int's and the @tallyLength@ parser,
+    which uses 'String's:
 
 > adder
 >     :: (Monad m, Proxy p) => () -> Consumer (StateP [Int] p) (Maybe Int) m Int
@@ -277,7 +278,7 @@ Just 99
 >             Nothing  -> forever $ respond Nothing
 >             Just str -> loop (tally + length str)
 
-    We can use the same 'zoom' trick to unify them into a single 'StateP' layer:
+    'zoom' unifies these two parsers to share the same 'StateP' layer:
 
 > combined
 >     :: (Monad m, Proxy p)
@@ -287,7 +288,7 @@ Just 99
 > source :: (Monad m, Proxy p) => () -> Producer p String m ()
 > source = fromListS ["One", "Two", "Three"]
 
-    ... which gives the correct behavior:
+    ... and they each interact with their respective buffer in isolation:
 
 >>> runProxy $ evalStateK mempty $ wrap . source >-> combined
 20
