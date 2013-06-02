@@ -51,7 +51,7 @@ import Control.Proxy.Trans.State (
     put,
     modify,
     gets )
-import Data.Monoid (mempty)
+import Data.Monoid (Monoid(mempty, mappend))
 
 {- $pushback
     'unDraw' stores all leftovers in a 'StateP' buffer and 'draw' retrieves
@@ -307,5 +307,5 @@ _snd = \f (x, a) -> fmap (\b -> (x, b)) (f a)
 {- $reexports
     "Control.Proxy.Trans.State" re-exports all functions.
 
-    "Data.Monoid" re-exports 'mempty'.
+    "Data.Monoid" re-exports the 'Monoid' class.
 -}
