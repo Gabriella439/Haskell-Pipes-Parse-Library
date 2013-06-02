@@ -92,6 +92,10 @@ Nothing
     'unwrap' behaves like the inverse of 'wrap'.  Compose 'unwrap' downstream of
     a pipe to unwrap every 'Just' and terminate on the first 'Nothing':
 
+> wrap . p >-> unwrap = p
+
+    You will commonly use 'unwrap' to terminate an infinite stream:
+
 >>> runProxy $ wrap . enumFromToS 1 3 >-> printD >-> unwrap
 Just 1
 Just 2

@@ -96,7 +96,10 @@ isEndOfInput = do
         Just _  -> return False
 {-# INLINABLE isEndOfInput #-}
 
--- | Fold all input into a list
+{-| Fold all input into a list
+
+    Note: 'drawAll' is usually an anti-pattern.
+-}
 drawAll :: (Monad m, P.Proxy p) => () -> StateP [a] p () (Maybe a) y' y m [a]
 drawAll = \() -> go id
   where
