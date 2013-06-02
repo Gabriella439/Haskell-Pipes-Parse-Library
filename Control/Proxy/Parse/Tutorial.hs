@@ -32,9 +32,6 @@ module Control.Proxy.Parse.Tutorial (
     -- * Resumable Parsing
     -- $resume
 
-    -- * Error handling
-    -- $errors
-
     -- * Nesting
     -- $nesting
 
@@ -406,67 +403,6 @@ Nothing
 
     'passWhile' pushed back the @3@ input onto the leftovers buffer and
     'runStateK' returns the leftovers in case we want to reuse them later on.
--}
-
-{- $errors
-    'draw' returns a 'Nothing' if it reaches the end of input, but this makes
-    drawing multiple values tedious.  For example, if I want to draw three
-    values, I'd have to hand-write the following error-checking loop:
-
-> import Control.Proxy
-> import Control.Proxy.Parse
->
-> drawN
->     :: (Monad m, Proxy p)
->     => Int -> () -> Consumer (StateP [a] p) (Maybe a) m (Maybe [a])
-> drawN n0 () = loop n0 []
->   where
->     loop 0 as = return $ Just (reverse as)
->     loop n as = do
->         ma <- draw
->         case ma of
->             Nothing -> return Nothing
->             Just a  -> loop (n - 1) (a:as)
-
-    Or do I?  Why not use 'MaybeP' (from @Control.Proxy.Trans.Maybe@) to
-    automate the 'Nothing' checks for me:
-
-> draw
->     :: (Monad m, Proxy p) => Consumer (StateP [a] p) (Maybe a) m (Maybe a)
->
-> MaybeP draw
->     :: (Monad m, Proxy p) => Consumer (MaybeP (StateP [a] p) (Maybe a) m a
->
-> replicateM n $ MaybeP draw
->     :: (Monad m, Proxy p) => Consumer (MaybeP (StateP [a] p) (Maybe a) m [a]
->
-> runMaybeP $ replicateM n $ MaybeP draw
->     :: (Monad m, Proxy p) => Consumer (StateP [a] p) (Maybe a) m (Maybe [a])
-
-    That was easy!  The solution also more closely matches our intention: \"Get
-    @n@ values, using 'MaybeP' to gloss over the 'Nothing' details\".
-
-    Let's implement it:
-
-> import Control.Monad
-> import Control.Proxy.Trans.Maybe
->
-> drawN
->     :: (Monad m, Proxy p)
->     => Int -> () -> StateP [a] p () (Maybe a) y' y m (Maybe [a])
-> drawN n () = runMaybeP $ replicateM n $ MaybeP draw
-
-    ... and see if it works as advertised:
-
->>> runProxy $ evalStateK mempty $ wrap . enumFromS   0   >-> drawN 4
-Just [0,1,2,3]
->>> runProxy $ evalStateK mempty $ wrap . enumFromToS 0 2 >-> drawN 4
-Nothing
-
-    Note that this does not permit backtracking to fully recover from the failed
-    parse.  If @drawN@ fails, the input it consumed is lost.  Derived libraries
-    will build upon @pipes-parse@ to allow you to temporarily embed perfect
-    backtracking parsers within the default non-backtracking background.
 -}
 
 {- $nesting
