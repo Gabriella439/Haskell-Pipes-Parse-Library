@@ -199,7 +199,8 @@ Just 99
 >             Just str -> loop (tally + length str)
 >
 > adder
->     :: (Monad m, Proxy p) => () -> Consumer (StateP [Int] p) (Maybe Int) m Int
+>     :: (Monad m, Proxy p)
+>     => () -> Consumer (StateP [Int] p) (Maybe Int) m Int
 > adder () = fmap sum $ drawAll ()
 
     We can use 'zoom' to unify these two parsers to share the same 'StateP'
@@ -220,13 +221,13 @@ Just 99
     state that each parser will use.  '_fst' directs the @tallyLength@ parser to
     use the @[String]@ leftovers buffer and '_snd' directs the @adder@ parser to
     use the @[Int]@ leftovers buffer.
-    ... and they each interact with their respective buffer in isolation:
+
+    Notice that we can still run the mixture of buffers by supplying 'mempty':
 
 >>> runProxy $ evalStateK mempty $ wrap . source >-> combined
 20
 
-    Notice that 'mempty' still initializes both leftovers buffers correctly
-    because:
+    This works because:
 
 > (mempty :: ([String], [Int])) = ([], [])
 -}
@@ -332,9 +333,9 @@ Just 99
     element.
 
     We often don't want composed parsing stages like 'drawAll' to share the same
-    leftovers buffer, but we also don't want to use 'zoom' add yet another
-    permanent buffer to our global state.  To solve this, we embed 'drawAll'
-    within a transient 'StateP' layer using 'evalStateK':
+    leftovers buffer as upstream stages, but we also don't want to use 'zoom' to
+    add yet another permanent buffer to our global state.  To solve this, we
+    embed 'drawAll' within a transient 'StateP' layer using 'evalStateK':
 
 > chunks () = loop
 >   where
@@ -394,8 +395,6 @@ Just 99
 {- $resume
     You can save leftovers buffers if you need to interrupt parsing for any
     reason.  Just replace 'evalStateK' with 'runStateK':
-    Moreover, you can use 'runStateK' if you want to keep the contents of both
-    leftovers buffer and reuse them later on:
 
 >>> let session = wrap . enumFromS 0 >-> passWhile (< 3) >-> printD >-> unwrap
 >>> runProxy $ runStateK mempty session
