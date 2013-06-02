@@ -40,7 +40,8 @@ import Control.Proxy
 import Control.Proxy.Parse
 
 {- $introduction
-    @pipes-parse@ provides utilities commonly required for parsing streams:
+    @pipes-parse@ provides utilities commonly required for parsing streams using
+    @pipes@:
 
     * End of input utilities and conventions for the @pipes@ ecosystem
 
