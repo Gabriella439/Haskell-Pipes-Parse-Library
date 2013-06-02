@@ -42,7 +42,7 @@ import Control.Proxy.Parse
 {- $introduction
     @pipes-parse@ provides utilities commonly required for parsing streams:
 
-    * End of input utilities and conventions for the @pipes-ecosystem@
+    * End of input utilities and conventions for the @pipes@ ecosystem
 
     * Pushback and leftovers support for saving unused input
 
@@ -455,4 +455,8 @@ Restrict subParser to consecutive elements less than 10
     This library is intentionally minimal and datatype-specific parsers belong
     in derived libraries.  This makes @pipes-parse@ a very light-weight and
     stable dependency that you can use in your own projects.
+
+    You can ask any questions about @pipes-parse@ and other @pipes@ libraries on
+    the official @pipes@ mailing list at
+    <mailto:haskell-pipes@googlegroups.com>.
 -}
