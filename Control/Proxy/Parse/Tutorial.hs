@@ -23,9 +23,6 @@ module Control.Proxy.Parse.Tutorial (
     -- * Isolating leftovers
     -- $mix
 
-    -- * Lenses
-    -- $lenses
-
     -- * Return value
     -- $return
 
@@ -227,9 +224,7 @@ Just 99
     This works because:
 
 > (mempty :: ([String], [Int])) = ([], [])
--}
 
-{- $lenses
     Let's study the type of 'zoom' to understand how it works:
 
 > -- zoom's true type is slightly different to avoid a dependency on `lens`
@@ -239,14 +234,14 @@ Just 99
     and zooms in on a sub-state using the provided lens.  When we give it the
     '_fst' lens we zoom in on the first element of a tuple:
 
-> _fst :: Lens' (a, b) a
+> _fst :: Lens' (s1, s2) s1
 >
 > zoom _fst :: StateP s1 p a' a b' b m r -> StateP (s1, s2) p a' a b' b m r
 
     ... and when we give it the '_snd' lens we zoom in on the second element of
     a tuple:
 
-> _snd :: Lens' (a, b) b
+> _snd :: Lens' (s1, s2) s2
 >
 > zoom _snd :: StateP s2 p a' a b' b m r -> StateP (s1, s2) p a' a b' b m r
 
@@ -270,11 +265,10 @@ Just 99
 >     , _buf3 :: [Double]
 >     }
 > makeLenses ''Leftovers
-> {- Generates:
->    buf1 :: Lens' Leftovers [String]
->    buf2 :: Lens' Leftovers [Int]
->    buf3 :: Lens' Leftovers [Double]
-> -}
+> -- Generates:
+> -- buf1 :: Lens' Leftovers [String]
+> -- buf2 :: Lens' Leftovers [Int]
+> -- buf3 :: Lens' Leftovers [Double]
 >
 > instance Monoid Leftovers where
 >     mempty = Leftovers [] [] []
@@ -331,8 +325,9 @@ Just 99
 
     We often don't want composed parsing stages like 'drawAll' to share the same
     leftovers buffer as upstream stages, but we also don't want to use 'zoom' to
-    add yet another permanent buffer to our global state.  To solve this, we
-    embed 'drawAll' within a transient 'StateP' layer using 'evalStateK':
+    add yet another permanent buffer to our global leftovers state.  To solve
+    this, we embed 'drawAll' within a transient 'StateP' layer using
+    'evalStateK':
 
 > chunks () = loop
 >   where
@@ -358,8 +353,9 @@ Just 99
 
 {- $return
     'wrap' allows you to return values directly from parsers because it produces
-    a polymorphic return value, @s@:
+    a polymorphic return value:
 
+> -- The 's' is polymorphic and will type-check as anything
 > wrap :: (Monad m, Proxy p) => p a' a b' b m r -> p a' a b' (Maybe b) m s
 
     This means that if you compose a parser downstream the parser can return the
@@ -401,8 +397,9 @@ Just 2
 Nothing
 ((), [3])
 
-    'passWhile' pushed back the @3@ input onto the leftovers buffer and
-    'runStateK' returns the leftovers in case we want to reuse them later on.
+    This returns the leftovers buffers in the result so that you can reuse them
+    later on.  In the above example, 'passWhile' pushed back the @3@ input onto
+    the leftovers buffer, so the result includes the unused @3@.
 -}
 
 {- $nesting
@@ -432,8 +429,8 @@ Nothing
 >     ys <- drawAll ()
 >     return (xs, ys)
 
-    The outer @parser@ correctly delimits the scope of the @subParser@ so that
-    the final 'drawAll' only consumes elements less than @10@:
+    Notice how we use 'evalStateK' each time we subset a parser so that the
+    sub-parser uses a fresh and transient leftovers buffer.
 
 >>> runProxy $ evalStateK mempty $ wrap . enumFromS 0 >-> parser
 Skip the first three elements
@@ -451,9 +448,7 @@ Restrict subParser to consecutive elements less than 10
 
     * mix or isolate leftovers buffers in a precise and type-safe way,
 
-    * easily delimit parsers to subsets of the input,
-
-    * use convenient @pipes@ error-handling idioms like 'MaybeP', and
+    * easily delimit parsers to subsets of the input, and
 
     * ignore standardization, thanks to compatibility functions like 'fmapPull'.
 
