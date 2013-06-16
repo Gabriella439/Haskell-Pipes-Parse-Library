@@ -21,12 +21,17 @@ module Pipes.Parse (
     fmapPull,
     returnPull,
     bindPull,
+
+    -- Re-exports
+    -- $reexports
+    module Control.Monad.Trans.State.Strict
     ) where
 
 import Control.Monad (forever)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.State.Strict (
-    StateT(StateT, runStateT), get, put, modify )
+    StateT(runStateT), evalStateT, execStateT, runState, evalState, execState )
+import qualified Control.Monad.Trans.State.Strict as S
 import Pipes
 import qualified Pipes.Prelude as P
 
@@ -41,17 +46,17 @@ import qualified Pipes.Prelude as P
 -}
 draw :: (Monad m) => Consumer (Maybe a) (StateT [a] m) (Maybe a)
 draw = do
-    s <- lift get
+    s <- lift S.get
     case s of
         []   -> request ()
         a:as -> do
-            lift $ put as
+            lift $ S.put as
             return (Just a)
 {-# INLINABLE draw #-}
 
 -- | Push an element back onto the leftovers buffer
 unDraw :: (Monad m) => a -> Effect (StateT [a] m) ()
-unDraw a = lift $ modify (a:)
+unDraw a = lift $ S.modify (a:)
 {-# INLINABLE unDraw #-}
 
 -- | Peek at the next element without consuming it
@@ -218,3 +223,9 @@ bindPull f = up \>\ f
                 up a'2
             Just a  -> return a
 {-# INLINABLE bindPull #-}
+
+{- $reexports
+
+    Control.Monad.Trans.State re-exports the 'StateT' type and all the run
+    functions.
+-}
