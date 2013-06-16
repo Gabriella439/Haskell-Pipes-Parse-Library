@@ -59,18 +59,18 @@ import Pipes.Parse
     To guard an input stream against termination, protect it with the 'wrap'
     function:
 
-> wrap :: (Monad m, Proxy p) => p a' a b' b m r -> p a' a b' (Maybe b) m s
+> wrap :: (Monad m) => Proxy a' a b' b m r -> Proxy a' a b' (Maybe b) m s
 
     This wraps all output values in a 'Just' and then protects against
     termination by producing a never-ending stream of 'Nothing' values:
 
 >>> -- Before
->>> runProxy $ enumFromToS 1 3 >-> printD
+>>> runProxy $ (P.fromList [1..3] >-> P.print) ()
 1
 2
 3
 >>> -- After
->>> runProxy $ wrap . enumFromToS 1 3 >-> printD
+>>> runProxy $ (wrap . P.fromList [1..3] >-> P.print) ()
 Just 1
 Just 2
 Just 3
@@ -82,16 +82,17 @@ Nothing
 
     You can also 'unwrap' streams:
 
-> unwrap :: (Monad m, Proxy p) => x -> p x (Maybe a) x a m ()
+> unwrap :: (Monad m) => () -> Pipe (Maybe a) a m ()
 
     'unwrap' behaves like the inverse of 'wrap'.  Compose 'unwrap' downstream of
     a pipe to unwrap every 'Just' and terminate on the first 'Nothing':
 
 > wrap . p >-> unwrap = p
 
-    You will commonly use 'unwrap' to terminate an infinite stream:
+    You will commonly use 'unwrap' to cancel out with 'wrap' and terminate an
+    infinite stream:
 
->>> runProxy $ wrap . enumFromToS 1 3 >-> printD >-> unwrap
+>>> runProxy $ (wrap . P.fromList [1..3] >-> P.forward P.print >-> unwrap >-> P.discard) ()
 Just 1
 Just 2
 Just 3
@@ -104,14 +105,16 @@ Nothing
     the original unwrapped stream?  We can use 'fmapPull' to lift existing
     proxies to ignore all 'Nothing's and only operate on the 'Just's:
 
+> -- The actual type of 'fmapPull' is more general
 > fmapPull
->     :: (Monad m, Proxy p)
->     => (x -> p x        a  x        b  m r)
->     -> (x -> p x (Maybe a) x (Maybe b) m r)
+>     :: (Monad m)
+>     => (() -> Pipe        a         b  m r)
+>     -> (() -> Pipe (Maybe a) (Maybe b) m r)
 
-    We can use this to lift 'printD' to operate on the original stream:
+    We can use this to lift the printing stage to operate only on the 'Just'
+    values and auto-forward any 'Nothing's:
 
->>> runProxy $ wrap . enumFromToS 1 3 >-> fmapPull printD >-> unwrap
+>>> runProxy $ (wrap . P.fromList [1..3] >-> fmapPull (P.forward P.print) >-> unwrap >-> P.discard) ()
 1
 2
 3
@@ -128,28 +131,28 @@ Nothing
 
     @pipes-parse@ requires no buy-in from the rest of the @pipes@ ecosystem
     thanks to these adapter routines that automatically lift existing pipes to
-    interoperate with end-of-input protocols.
+    interoperate with the 'Maybe'-based end-of-input protocol.
 -}
 
 {- $leftovers
     To take advantage of leftovers support, just replace your 'request's with
     'draw':
 
-> draw :: (Monad m, Proxy p) => StateP [a] p () (Maybe a) y' y m (Maybe a)
+> draw :: (Monad m) => Consumer (Maybe a) (StateT [a] m) (Maybe a)
 
     ... and use 'unDraw' to push back leftovers:
 
-> unDraw :: (Monad m, Proxy p) => a -> StateP [a] p x' x y' y m ()
+> unDraw :: (Monad m) => a -> Effect (StateT [a] m) ()
 
     These both use a last-in-first-out (LIFO) leftovers buffer of type @[a]@
-    stored in a 'StateP' layer.  'unDraw' prepends elements to this list of
+    stored in a 'StateT' layer.  'unDraw' prepends elements to this list of
     leftovers and 'draw' will consume elements from the head of the leftovers
-    list until it is empty before requesting new input from upstream:
+    list until it is empty before 'request'ing new input from upstream:
 
-> consumer :: (Proxy p) => () -> Consumer (StateP [a] p) (Maybe Int) IO ()
+> consumer :: () -> Consumer (Maybe Int) (StateT [Int] IO) ()
 > consumer () = do
 >     ma <- draw
->     lift $ print ma
+>     liftIO $ print ma
 >     -- You can push back values you never drew
 >     unDraw 99
 >     -- You can push back more than one value at a time
@@ -160,12 +163,11 @@ Nothing
 >     -- Values come out of the buffer in last-in-first-out (LIFO) order
 >     replicateM_ 2 $ do
 >         ma <- draw
->         lift $ print ma
+>         liftIO $ print ma
 
-    To run the 'StateP' layer, just provide an empty initial state using
-    'mempty':
+    To run the 'StateT' layer, just provide an empty initial list:
 
->>> runProxy $ evalStateK mempty $ wrap . enumFromS 1 >-> consumer
+>>> runProxy $ evalStateP [] $ (wrap . P.fromList [1..] >-> consumer) ()
 Just 1
 Just 1
 Just 99
