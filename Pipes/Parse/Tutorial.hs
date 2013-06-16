@@ -4,7 +4,7 @@
     @Control.Proxy.Tutorial@.
 -}
 
-module Control.Proxy.Parse.Tutorial (
+module Pipes.Parse.Tutorial (
     -- * Introduction
     -- $introduction
 
@@ -36,8 +36,8 @@ module Control.Proxy.Parse.Tutorial (
     -- $conclusion
     ) where
 
-import Control.Proxy
-import Control.Proxy.Parse
+import Pipes
+import Pipes.Parse
 
 {- $introduction
     @pipes-parse@ provides utilities commonly required for parsing streams using
