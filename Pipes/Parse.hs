@@ -25,7 +25,8 @@ module Pipes.Parse (
 
 import Control.Monad (forever)
 import Control.Monad.Trans.Class (lift)
-import Control.Monad.Trans.State (StateT(StateT, runStateT), get, put, modify)
+import Control.Monad.Trans.State.Strict (
+    StateT(StateT, runStateT), get, put, modify )
 import Pipes
 import qualified Pipes.Prelude as P
 
