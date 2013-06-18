@@ -327,7 +327,7 @@ Just 99
 
     ... but it doesn't:
 
->>> runProxy $ evalStateP [] $ (wrap . P.fromList[1..15] >-> chunks >-> hoist lift . P.print) ()
+>>> runProxy $ evalStateP [] $ (wrap . P.fromList [1..15] >-> chunks >-> hoist lift . P.print) ()
 [1,2,3]
 [4,5,6,7]
 [8,9,10,11]
@@ -343,8 +343,8 @@ Just 99
     We often don't want composed parsing stages like 'drawAll' to share the same
     leftovers buffer as upstream stages, but we also don't want to use 'zoom' to
     add yet another permanent buffer to our global leftovers state.  To solve
-    this, we embed 'drawAll' within a transient 'StateP' layer using
-    'evalStateK':
+    this, we embed 'drawAll' within a transient 'StateT' layer using
+    'evalStateP':
 
 > chunks () = loop
 >   where
@@ -357,14 +357,14 @@ Just 99
     This runs 'drawAll' within a fresh temporary buffer so that it does not
     reuse the same buffer as the surrounding pipe:
 
->>> runProxy $ evalStateK mempty $ wrap . enumFromToS 1 15 >-> chunks >-> printD
+>>> runProxy $ evalStateP [] $ (wrap . P.fromList [1..15] >-> chunks >-> hoist lift . P.print) ()
 [1,2,3]
 [4,5,6]
 [7,8,9]
 [10,11,12]
 [13,14,15]
 
-    Conversely, remove the 'evalStateK' if you deliberately want downstream
+    Conversely, remove the 'evalStateP' if you deliberately want downstream
     parsers to share the same leftovers buffers.
 -}
 
@@ -373,14 +373,13 @@ Just 99
     a polymorphic return value:
 
 > -- The 's' is polymorphic and will type-check as anything
-> wrap :: (Monad m, Proxy p) => p a' a b' b m r -> p a' a b' (Maybe b) m s
+> wrap :: (Monad m) => Proxy a' a b' b m r -> Proxy a' a b' (Maybe b) m s
 
     This means that if you compose a parser downstream the parser can return the
     result directly:
 
 > parser
->     :: (Monad m, Proxy p)
->     => () -> Consumer (StateP [a] p) (Maybe a) m (Maybe a, Maybe a)
+>     :: (Monad m) => () -> Consumer (Maybe a) (StateT [a] m) (Maybe a, Maybe a)
 > parser () = do
 >     mx <- draw
 >     my <- draw
@@ -389,29 +388,22 @@ Just 99
     The polymorphic return value of 'wrap' will type-check as anything,
     including our parser's result:
 
-> session
->     :: (Monad m, Proxy p)
->     => () -> Session (StateP [Int] p) m (Maybe Int, Maybe Int)
-> session = wrap . enumFromToS 0 9 >-> parser
+> effect :: (Monad m) => () -> Effect (StateT [Int] m) (Maybe Int, Maybe Int)
+> effect = wrap . P.fromList [0..9] >-> parser
 
-    So we can run this 'Session' and retrieve the result directly from the
+    So we can run this 'Effect' and retrieve the result directly from the
     return value:
 
->>> runProxy $ evalStateK session
+>>> runProxy $ evalStateP [] $ effect ()
 (Just 0, Just 1)
 
 -}
 
 {- $resume
     You can save leftovers buffers if you need to interrupt parsing for any
-    reason.  Just replace 'evalStateK' with 'runStateK':
+    reason.  Just replace 'evalStateP' with 'runStateP':
 
->>> let session = wrap . enumFromS 0 >-> passWhile (< 3) >-> printD >-> unwrap
->>> runProxy $ runStateK mempty session
-Just 0
-Just 1
-Just 2
-Nothing
+>>> runProxy $ runStateP [] $ (wrap . P.fromList [0..] >-> passWhile (< 3) >-> unwrap >-> P.discard) ()
 ((), [3])
 
     This returns the leftovers buffers in the result so that you can reuse them
