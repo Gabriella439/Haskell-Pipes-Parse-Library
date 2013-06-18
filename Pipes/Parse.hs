@@ -1,3 +1,5 @@
+{-# LANGUAGE Rank2Types #-}
+
 -- | Parsing utilities for pipes
 
 module Pipes.Parse (
