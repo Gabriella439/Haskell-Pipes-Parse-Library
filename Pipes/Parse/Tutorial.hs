@@ -64,6 +64,10 @@ import Pipes.Parse
     This wraps all output values in a 'Just' and then protects against
     termination by producing a never-ending stream of 'Nothing' values:
 
+>>> import Pipes
+>>> import Pipes.Parse
+>>> import qualified Pipes.Prelude as P
+>>>
 >>> -- Before
 >>> runProxy $ (P.fromList [1..3] >-> P.print) ()
 1
@@ -92,7 +96,7 @@ Nothing
     You will commonly use 'unwrap' to cancel out with 'wrap' and terminate an
     infinite stream:
 
->>> runProxy $ (wrap . P.fromList [1..3] >-> P.forward P.print >-> unwrap >-> P.discard) ()
+>>> runProxy $ (wrap . P.fromList [1..3] >-> P.tee P.print >-> unwrap >-> P.discard) ()
 Just 1
 Just 2
 Just 3
@@ -114,7 +118,7 @@ Nothing
     We can use this to lift the printing stage to operate only on the 'Just'
     values and auto-forward any 'Nothing's:
 
->>> runProxy $ (wrap . P.fromList [1..3] >-> fmapPull (P.forward P.print) >-> unwrap >-> P.discard) ()
+>>> runProxy $ (wrap . P.fromList [1..3] >-> fmapPull (P.tee P.print) >-> unwrap >-> P.discard) ()
 1
 2
 3
@@ -149,6 +153,13 @@ Nothing
     leftovers and 'draw' will consume elements from the head of the leftovers
     list until it is empty before 'request'ing new input from upstream:
 
+> import Control.Monad
+> import Control.Monad.IO.Class
+> import Pipes
+> import Pipes.Lift
+> import Pipes.Parse
+> import qualified Pipes.Prelude as P
+> 
 > consumer :: () -> Consumer (Maybe Int) (StateT [Int] IO) ()
 > consumer () = do
 >     ma <- draw
@@ -175,17 +186,15 @@ Just 99
 -}
 
 {- $diverse
-    Why use 'mempty' instead of @[]@?  @pipes-parse@ lets you easily mix
-    distinct leftovers buffers into the same 'StateP' layer and 'mempty' will
-    still do the correct thing when you use multiple buffers.
+    @pipes-parse@ lets you easily mix distinct leftovers buffers into the same
+    'StateT' layer using lenses.  For example, suppose that we need to compose
+    parsing pipes that have different input types and therefore different types
+    of leftovers buffers, such as the following two parsers:
 
-    For example, suppose that we need to compose parsing pipes that have
-    different input types and therefore different types of leftovers buffers,
-    such as the following two parsers:
-
+> import Control.Monad.Trans.State.Strict
+>
 > tallyLength
->     :: (Monad m, Proxy p)
->     => () -> Pipe (StateP [String] p) (Maybe String) (Maybe Int) m r
+>     :: (Monad m) => () -> Pipe (Maybe String) (Maybe Int) (StateT [String] m) r
 > tallyLength () = loop 0
 >   where
 >     loop tally = do
@@ -195,67 +204,80 @@ Just 99
 >             Nothing  -> forever $ respond Nothing
 >             Just str -> loop (tally + length str)
 >
-> adder
->     :: (Monad m, Proxy p)
->     => () -> Consumer (StateP [Int] p) (Maybe Int) m Int
+> adder :: (Monad m) => () -> Consumer (Maybe Int) (StateT [Int] m) Int
 > adder () = fmap sum $ drawAll ()
 
     We can use 'zoom' to unify these two parsers to share the same 'StateP'
     layer:
 
+> import Control.Lens
+> 
 > combined
->     :: (Monad m, Proxy p)
->     => () -> Consumer (StateP ([String], [Int]) p) (Maybe String) m Int
-> --                                 ^       ^
-> --                                 |       |
-> --        Two leftovers buffers ---+-------+
-> combined = zoom _fst . tallyLength >-> zoom _snd . adder
->
-> source :: (Monad m, Proxy p) => () -> Producer p String m ()
-> source = fromListS ["One", "Two", "Three"]
+>     :: (Monad m)
+>     => () -> Consumer (Maybe String) (StateT ([String], [Int]) m) Int
+> --                                                ^       ^
+> --                                                |       |
+> --                       Two leftovers buffers ---+-------+
+> combined = hoist (zoom _1) . tallyLength >-> hoist (zoom _2) . adder
+> 
+> source :: (Monad m) => () -> Producer String m ()
+> source = P.fromList ["One", "Two", "Three"]
 
     'zoom' takes a @Lens'@ as an argument which specifies which subset of the
-    state that each parser will use.  '_fst' directs the @tallyLength@ parser to
-    use the @[String]@ leftovers buffer and '_snd' directs the @adder@ parser to
-    use the @[Int]@ leftovers buffer.
+    state that each parser will use.  '_1' directs the @tallyLength@ parser to
+    use the first leftovers buffer (i.e. @[String]@) and '_2' directs the
+    @adder@ parser to use the second leftovers buffer (i.e. @[Int]@).
 
-    Notice that we can still run the mixture of buffers by supplying 'mempty':
+    To run this mixed buffers parser, provide both buffers initially empty:
 
->>> runProxy $ evalStateK mempty $ wrap . source >-> combined
+>>> runProxy $ evalStateP ([], []) $ (wrap . source >-> combined) ()
 20
-
-    This works because:
-
-> (mempty :: ([String], [Int])) = ([], [])
 
     Let's study the type of 'zoom' to understand how it works:
 
-> -- zoom's true type is slightly different to avoid a dependency on `lens`
-> zoom :: Lens' s1 s2 -> StateP s2 p a' a b' b m r -> StateP s1 p a' a b' b m r
+> -- zoom's true type is more general
+> zoom :: (Monad m) => Lens' s1 s2 -> StateT s2 m r -> StateT s1 m r
 
-    'zoom' behaves like the function of the same name from the @lens@ package
-    and zooms in on a sub-state using the provided lens.  When we give it the
-    '_fst' lens we zoom in on the first element of a tuple:
+    'zoom' focuses in on a sub-state using the provided lens.  When we give it
+    the '_1' lens we zoom in on the first element of a tuple:
 
-> _fst :: Lens' (s1, s2) s1
+> -- _1's true type is more general
+> _1 :: Lens' (s1, s2) s1
 >
-> zoom _fst :: StateP s1 p a' a b' b m r -> StateP (s1, s2) p a' a b' b m r
+> zoom _1 :: StateT s1 m r -> StateT (s1, s2) m r
 
     ... and when we give it the '_snd' lens we zoom in on the second element of
     a tuple:
 
-> _snd :: Lens' (s1, s2) s2
+> _2 :: Lens' (s1, s2) s2
 >
-> zoom _snd :: StateP s2 p a' a b' b m r -> StateP (s1, s2) p a' a b' b m r
+> zoom _2 :: StateT s2 m r -> StateT (s1, s2) m r
 
-    '_fst' and '_snd' are like '_1' and '_2' from the @lens@ package, except
-    with a more monomorphic type.  This ensures that type inference works
-    correctly when supplying 'mempty' as the initial state.
+    We 'hoist' both of these 'zoom's to modify the base monads of both parsers
+    to agree on a common global state:
+
+> tallyLength
+>     :: (Monad m)
+>     => () -> Pipe (Maybe String) (Maybe Int) (StateT [String] m) r
+> hoist (zoom _1) . tallyLength 
+>     :: (Monad m)
+>     => () -> Pipe (Maybe String) (Maybe Int) (StateT ([String], Int) m) r
+>
+> adder
+>     :: (Monad m)
+>     => () -> Consumer (Maybe Int) (StateT [Int] m) Int
+> hoist (zoom _2) . adder
+>     :: (Monad m)
+>     => () -> Consumer (Maybe Int) (StateT ([String], [Int]) m) Int
+
+    Once they agree on the same state we can compose them directly.
 
     If you want to merge more than one leftovers buffer, you can either nest
     pairs of tuples:
 
-> p = zoom _fst . p1 >-> zoom (_snd . _fst) . p2 >-> zoom (_snd . _snd) . p3
+> p =     hoist (zoom  _1      ) . p1
+>     >-> hoist (zoom (_2 . _1)) . p2
+>     >-> hoist (zoom (_2 . _2)) . p3
 
     ... or you can create a data type that holds all your leftovers and generate
     lenses to its fields:
@@ -273,15 +295,9 @@ Just 99
 > -- buf2 :: Lens' Leftovers [Int]
 > -- buf3 :: Lens' Leftovers [Double]
 >
-> instance Monoid Leftovers where
->     mempty = Leftovers [] [] []
->     mappend (Leftovers as bs cs) (Leftovers as' bs' cs')
->         = Leftovers (as ++ as') (bs ++ bs') (cs ++ cs')
->
-> p = zoom buf1 . p1 >-> zoom buf2 . p2 >-> zoom buf3 . p3
-
-    'zoom' works seamlessly with all lenses from the @lens@ package, but you
-    don't need a @lens@ dependency to use @pipes-parse@.
+> p =     hoist (zoom buf1) . p1
+>     >-> hoist (zoom buf2) . p2
+>     >-> hoist (zoom buf3) . p3
 -}
 
 {- $mix
@@ -289,20 +305,18 @@ Just 99
     mix the following three @pipes-parse@ utilities:
 
 > -- Transmit up to the specified number of elements
-> passUpTo
->     :: (Monad m, Proxy p)
->     => Int -> () -> Pipe (StateP [a] p) (Maybe a) (Maybe a) m r
+> passUpTo :: (Monad m) => Int -> () -> Pipe (Maybe a) (Maybe a) (StateT [a] m) r
 >
 > -- Fold all input into a list
-> drawAll :: (Monad m, Proxy p) => () -> StateP [a] p () (Maybe a) y' y m [a]
+> drawAll :: (Monad m) => () -> Consumer (Maybe a) (StateT [a] m) [a]
 >
 > -- Check if at end of input stream
-> isEndOfInput :: (Monad m, Proxy p) => StateP [a] p () (Maybe a) y' y m Bool
+> isEndOfInput :: (Monad m) => Consumer (Maybe a) (StateT [a] m) Bool
 
     We might expect the following code to yield chunks of three elements at a
     time:
 
-> chunks :: (Monad m, Proxy p) => () -> Pipe (StateP [a] p) (Maybe a) [a] m ()
+> chunks :: (Monad m) => () -> Pipe (Maybe a) [a] (StateT [a] m) ()
 > chunks () = loop
 >   where
 >     loop = do
@@ -313,7 +327,7 @@ Just 99
 
     ... but it doesn't:
 
->>> runProxy $ evalStateK mempty $ wrap . enumFromToS 1 15 >-> chunks >-> printD
+>>> runProxy $ evalStateP [] $ (wrap . P.fromList[1..15] >-> chunks >-> hoist lift . P.print) ()
 [1,2,3]
 [4,5,6,7]
 [8,9,10,11]
@@ -335,7 +349,7 @@ Just 99
 > chunks () = loop
 >   where
 >     loop = do
->         as  <- (passUpTo 3 >-> evalStateK mempty drawAll) ()
+>         as  <- (passUpTo 3 >-> evalStateP [] . drawAll) ()
 >         respond as
 >         eof <- isEndOfInput
 >         unless eof loop
