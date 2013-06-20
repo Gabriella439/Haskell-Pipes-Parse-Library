@@ -69,12 +69,12 @@ import Pipes.Parse
 >>> import qualified Pipes.Prelude as P
 >>>
 >>> -- Before
->>> runProxy $ (P.fromList [1..3] >-> P.print) ()
+>>> runEffect $ (P.fromList [1..3] >-> P.print) ()
 1
 2
 3
 >>> -- After
->>> runProxy $ (wrap . P.fromList [1..3] >-> P.print) ()
+>>> runEffect $ (wrap . P.fromList [1..3] >-> P.print) ()
 Just 1
 Just 2
 Just 3
@@ -96,7 +96,7 @@ Nothing
     You will commonly use 'unwrap' to cancel out with 'wrap' and terminate an
     infinite stream:
 
->>> runProxy $ (wrap . P.fromList [1..3] >-> P.tee P.print >-> unwrap >-> P.discard) ()
+>>> runEffect $ (wrap . P.fromList [1..3] >-> P.tee P.print >-> unwrap >-> P.discard) ()
 Just 1
 Just 2
 Just 3
@@ -118,7 +118,7 @@ Nothing
     We can use this to lift the printing stage to operate only on the 'Just'
     values and auto-forward any 'Nothing's:
 
->>> runProxy $ (wrap . P.fromList [1..3] >-> fmapPull (P.tee P.print) >-> unwrap >-> P.discard) ()
+>>> runEffect $ (wrap . P.fromList [1..3] >-> fmapPull (P.tee P.print) >-> unwrap >-> P.discard) ()
 1
 2
 3
@@ -178,7 +178,7 @@ Nothing
 
     To run the 'StateT' layer, just provide an empty initial list:
 
->>> runProxy $ evalStateP [] $ (wrap . P.fromList [1..] >-> consumer) ()
+>>> runEffect $ evalStateP [] $ (wrap . P.fromList [1..] >-> consumer) ()
 Just 1
 Just 1
 Just 99
@@ -230,7 +230,7 @@ Just 99
 
     To run this mixed buffers parser, provide both buffers initially empty:
 
->>> runProxy $ evalStateP ([], []) $ (wrap . source >-> combined) ()
+>>> runEffect $ evalStateP ([], []) $ (wrap . source >-> combined) ()
 20
 
     Let's study the type of 'zoom' to understand how it works:
@@ -259,6 +259,7 @@ Just 99
 > tallyLength
 >     :: (Monad m)
 >     => () -> Pipe (Maybe String) (Maybe Int) (StateT [String] m) r
+>
 > hoist (zoom _1) . tallyLength 
 >     :: (Monad m)
 >     => () -> Pipe (Maybe String) (Maybe Int) (StateT ([String], Int) m) r
@@ -266,6 +267,7 @@ Just 99
 > adder
 >     :: (Monad m)
 >     => () -> Consumer (Maybe Int) (StateT [Int] m) Int
+>
 > hoist (zoom _2) . adder
 >     :: (Monad m)
 >     => () -> Consumer (Maybe Int) (StateT ([String], [Int]) m) Int
@@ -327,7 +329,7 @@ Just 99
 
     ... but it doesn't:
 
->>> runProxy $ evalStateP [] $ (wrap . P.fromList [1..15] >-> chunks >-> hoist lift . P.print) ()
+>>> runEffect $ evalStateP [] $ (wrap . P.fromList [1..15] >-> chunks >-> hoist lift . P.print) ()
 [1,2,3]
 [4,5,6,7]
 [8,9,10,11]
@@ -343,13 +345,22 @@ Just 99
     We often don't want composed parsing stages like 'drawAll' to share the same
     leftovers buffer as upstream stages, but we also don't want to use 'zoom' to
     add yet another permanent buffer to our global leftovers state.  To solve
-    this, we embed 'drawAll' within a transient 'StateT' layer using
-    'evalStateP':
+    this, we embed 'drawAll' within a transient 'StateT' layer with the 'using'
+    command:
+
+> using
+>     :: (Monad m)
+>     => s -> Proxy a' a b' b (StateT s m) r -> Proxy a' a b' b (StateT s m) r
+> using s = hoist lift . evalStateP s
+
+    This runs the sub-parser within a temporary 'StateT' layer initialized with
+    the given leftovers buffer.  The leftovers buffer vanishes without a trace
+    when the sub-parser completes:
 
 > chunks () = loop
 >   where
 >     loop = do
->         as  <- (passUpTo 3 >-> evalStateP [] . drawAll) ()
+>         as  <- (passUpTo 3 >-> using [] . drawAll) ()
 >         respond as
 >         eof <- isEndOfInput
 >         unless eof loop
@@ -357,15 +368,15 @@ Just 99
     This runs 'drawAll' within a fresh temporary buffer so that it does not
     reuse the same buffer as the surrounding pipe:
 
->>> runProxy $ evalStateP [] $ (wrap . P.fromList [1..15] >-> chunks >-> hoist lift . P.print) ()
+>>> runEffect $ evalStateP [] $ (wrap . P.fromList [1..15] >-> chunks >-> hoist lift . P.print) ()
 [1,2,3]
 [4,5,6]
 [7,8,9]
 [10,11,12]
 [13,14,15]
 
-    Conversely, remove the 'evalStateP' if you deliberately want downstream
-    parsers to share the same leftovers buffers.
+    Conversely, remove the 'using' if you deliberately want downstream parsers
+    to share the same leftovers buffers as upstream parsers.
 -}
 
 {- $return
@@ -394,7 +405,7 @@ Just 99
     So we can run this 'Effect' and retrieve the result directly from the
     return value:
 
->>> runProxy $ evalStateP [] $ effect ()
+>>> runEffect $ evalStateP [] $ effect ()
 (Just 0, Just 1)
 
 -}
@@ -403,7 +414,7 @@ Just 99
     You can save leftovers buffers if you need to interrupt parsing for any
     reason.  Just replace 'evalStateP' with 'runStateP':
 
->>> runProxy $ runStateP [] $ (wrap . P.fromList [0..] >-> passWhile (< 3) >-> unwrap >-> P.discard) ()
+>>> runEffect $ runStateP [] $ (wrap . P.fromList [(0::Int)..] >-> passWhile (< 3) >-> unwrap >-> P.discard) ()
 ((), [3])
 
     This returns the leftovers buffers in the result so that you can reuse them
@@ -416,32 +427,27 @@ Just 99
     restricting them to a subset of the stream, as the following example
     illustrates:
 
-> import Control.Proxy
-> import Control.Proxy.Parse
+> import Control.Monad.IO.Class
 >
-> parser
->     :: (Proxy p)
->     => () -> Consumer (StateP [Int] p) (Maybe Int) IO ([Int], [Int])
-> parser () = do
->     lift $ putStrLn "Skip the first three elements"
->     (passUpTo 3 >-> evalStateK mempty skipAll) ()
->     lift $ putStrLn "Restrict subParser to consecutive elements less than 10"
->     (passWhile (< 10) >-> evalStateK mempty subParser) ()
+> outerParser :: () -> Consumer (Maybe Int) (StateT [Int] IO) ([Int], [Int])
+> outerParser () = do
+>     liftIO $ putStrLn "Skip the first three elements"
+>     (passUpTo 3 >-> using [] . skipAll) ()
+>     liftIO $ putStrLn "Restrict innerParser to consecutive elements less than 10"
+>     (passWhile (< 10) >-> using [] . innerParser) ()
 >
-> subParser
->     :: (Proxy p)
->     => () -> Consumer (StateP [Int] p) (Maybe Int) IO ([Int], [Int])
-> subParser () = do
->     lift $ putStrLn "- Get the next four elements"
->     xs <- (passUpTo 4 >-> evalStateK mempty drawAll) ()
->     lift $ putStrLn "- Get the rest of the input"
+> innerParser :: () -> Consumer (Maybe Int) (StateT [Int] IO) ([Int], [Int])
+> innerParser () = do
+>     liftIO $ putStrLn "- Get the next four elements"
+>     xs <- (passUpTo 4 >-> using [] . drawAll) ()
+>     liftIO $ putStrLn "- Get the rest of the input"
 >     ys <- drawAll ()
 >     return (xs, ys)
 
     Notice how we use 'evalStateK' each time we subset a parser so that the
     sub-parser uses a fresh and transient leftovers buffer.
 
->>> runProxy $ evalStateK mempty $ wrap . enumFromS 0 >-> parser
+>>> runEffect $ evalStateP [] $ (wrap . P.fromList [0..] >-> parser) ()
 Skip the first three elements
 Restrict subParser to consecutive elements less than 10
 - Get the next four elements
