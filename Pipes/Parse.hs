@@ -20,6 +20,7 @@ module Pipes.Parse (
     -- $adapters
     wrap,
     unwrap,
+    using,
     fmapPull,
     returnPull,
     bindPull,
@@ -35,6 +36,7 @@ import Control.Monad.Trans.State.Strict (
     StateT(runStateT), evalStateT, execStateT, runState, evalState, execState )
 import qualified Control.Monad.Trans.State.Strict as S
 import Pipes
+import Pipes.Lift
 import qualified Pipes.Prelude as P
 
 {- $pushback
@@ -172,6 +174,12 @@ unwrap () = go
                 respond a
                 go
 {-# INLINABLE unwrap #-}
+
+-- | Run a sub-parser with an isolated leftovers buffer
+using
+    :: (Monad m)
+    => s -> Proxy a' a b' b (StateT s m) r -> Proxy a' a b' b (StateT s m) r
+using s = hoist lift . evalStateP s
 
 {-| Lift a 'Maybe'-oblivious pipe to a 'Maybe'-aware pipe by auto-forwarding
     all 'Nothing's.
