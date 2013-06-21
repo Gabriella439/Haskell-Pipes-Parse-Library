@@ -41,7 +41,8 @@ import qualified Pipes.Prelude as P
 
 {- $pushback
     'unDraw' stores all leftovers in a 'StateP' buffer and 'draw' retrieves
-    leftovers from this buffer before drawing new input from upstream.
+    leftovers in last-in-first-out (LIFO) order from this buffer before drawing
+    new input from upstream.
 -}
 
 {-| Like @request ()@, except try to use the leftovers buffer first
