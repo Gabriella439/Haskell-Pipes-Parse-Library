@@ -5,6 +5,7 @@
 module Pipes.Parse (
     -- * Pushback and Leftovers
     -- $pushback
+    Draw,
     draw,
     unDraw,
 
@@ -45,15 +46,17 @@ import qualified Pipes.Prelude as P
     new input from upstream.
 -}
 
+data Draw = Draw
+
 {-| Like @request ()@, except try to use the leftovers buffer first
 
     A 'Nothing' return value indicates end of input.
 -}
-draw :: (Monad m) => Consumer (Maybe a) (StateT [a] m) (Maybe a)
+draw :: (Monad m) => Client Draw (Maybe a) (StateT [a] m) (Maybe a)
 draw = do
     s <- lift S.get
     case s of
-        []   -> request ()
+        []   -> request Draw
         a:as -> do
             lift $ S.put as
             return (Just a)
@@ -65,7 +68,7 @@ unDraw a = lift $ S.modify (a:)
 {-# INLINABLE unDraw #-}
 
 -- | Peek at the next element without consuming it
-peek :: (Monad m) => Consumer (Maybe a) (StateT [a] m) (Maybe a)
+peek :: (Monad m) => Client Draw (Maybe a) (StateT [a] m) (Maybe a)
 peek = do
     ma <- draw
     case ma of
@@ -75,7 +78,7 @@ peek = do
 {-# INLINABLE peek #-}
 
 -- | Check if at end of input stream.
-isEndOfInput :: (Monad m) => Consumer (Maybe a) (StateT [a] m) Bool
+isEndOfInput :: (Monad m) => Client Draw (Maybe a) (StateT [a] m) Bool
 isEndOfInput = do
     ma <- peek
     case ma of
@@ -87,7 +90,7 @@ isEndOfInput = do
 
     Note: 'drawAll' is usually an anti-pattern.
 -}
-drawAll :: (Monad m) => () -> Consumer (Maybe a) (StateT [a] m) [a]
+drawAll :: (Monad m) => () -> Client Draw (Maybe a) (StateT [a] m) [a]
 drawAll = \() -> go id
   where
     go diffAs = do
@@ -98,7 +101,7 @@ drawAll = \() -> go id
 {-# INLINABLE drawAll #-}
 
 -- | Consume the input completely, discarding all values
-skipAll :: (Monad m) => () -> Consumer (Maybe a) (StateT [a] m) ()
+skipAll :: (Monad m) => () -> Client Draw (Maybe a) (StateT [a] m) ()
 skipAll = \() -> go
   where
     go = do
@@ -109,8 +112,10 @@ skipAll = \() -> go
 {-# INLINABLE skipAll #-}
 
 -- | Forward up to the specified number of elements downstream
-passUpTo :: (Monad m) => Int -> () -> Pipe (Maybe a) (Maybe a) (StateT [a] m) r
-passUpTo n0 = \() -> go n0
+passUpTo
+    :: (Monad m)
+    => Int -> Draw -> Proxy Draw (Maybe a) Draw (Maybe a) (StateT [a] m) r
+passUpTo n0 = \_ -> go n0
   where
     go n0 =
         if (n0 <= 0)
@@ -128,8 +133,9 @@ passUpTo n0 = \() -> go n0
 -}
 passWhile
     :: (Monad m)
-    => (a -> Bool) -> () -> Pipe (Maybe a) (Maybe a) (StateT [a] m) r
-passWhile pred = \() -> go
+    => (a -> Bool)
+    -> Draw -> Proxy Draw (Maybe a) Draw (Maybe a) (StateT [a] m) r
+passWhile pred = \_ -> go
   where
     go = do
         ma <- draw
@@ -155,20 +161,25 @@ passWhile pred = \() -> go
 {-| Guard a pipe from terminating by wrapping every output in 'Just' and ending
     with a never-ending stream of 'Nothing's.
 -}
-wrap :: (Monad m) => Proxy a' a b' b m r -> Proxy a' a b' (Maybe b) m s
-wrap = \p -> do
-    p //> \b -> respond (Just b)
+wrap
+    :: (Monad m)
+    => (()   -> Proxy a' a ()          b  m r)
+    -> (Draw -> Proxy a' a Draw (Maybe b) m s)
+wrap f _ = do
+    (f ()) //> \b -> do
+        respond (Just b)
+        return ()
     forever $ respond Nothing
 {-# INLINABLE wrap #-}
 
 {-| Compose 'unwrap' downstream of a guarded pipe to unwrap all 'Just's and
     terminate on the first 'Nothing'.
 -}
-unwrap :: (Monad m) => () -> Pipe (Maybe a) a m ()
+unwrap :: (Monad m) => () -> Proxy Draw (Maybe a) () a (StateT [a] m) ()
 unwrap () = go
   where
     go = do
-        ma <- request ()
+        ma <- draw
         case ma of
             Nothing -> return ()
             Just a  -> do
@@ -191,14 +202,16 @@ using s = hoist lift . evalStateP s
 -}
 fmapPull
     :: (Monad m)
-    => (x -> Proxy x        a  x        b  m r)
-    -> (x -> Proxy x (Maybe a) x (Maybe b) m r)
+    => (()   -> Pipe              a              b  m r)
+    -> (Draw -> Proxy Draw (Maybe a) Draw (Maybe b) m r)
 fmapPull f = bindPull (f >-> returnPull)
 {-# INLINABLE fmapPull #-}
 
 -- | Wrap all values flowing downstream in 'Just'.
-returnPull :: (Monad m) => x -> Proxy x a x (Maybe a) m r
-returnPull = P.generalize (P.map Just)
+returnPull :: (Monad m) => Draw -> Proxy () a Draw (Maybe a) m r
+returnPull _ = forever $ do
+    a <- request ()
+    respond (Just a)
 {-# INLINABLE returnPull #-}
 
 {-| Lift a 'Maybe'-generating pipe to a 'Maybe'-transforming pipe by
@@ -222,17 +235,23 @@ Or equivalently:
 -}
 bindPull
     :: (Monad m)
-    => (x -> Proxy x        a  x (Maybe b) m r)
-    -> (x -> Proxy x (Maybe a) x (Maybe b) m r)
-bindPull f = up \>\ f
+    => (Draw -> Proxy ()          a  Draw (Maybe b) m r)
+    -> (Draw -> Proxy Draw (Maybe a) Draw (Maybe b) m r)
+bindPull f d = evalStateP d $ (up \>\ hoist lift . f />/ dn) d
   where
-    up a' = do
-        ma <- request a'
+    up () = do
+        d  <- lift S.get
+        ma <- request d
         case ma of
             Nothing -> do
-                a'2 <- respond Nothing
-                up a'2
+                d2 <- respond Nothing
+                lift $ S.put d
+                up ()
             Just a  -> return a
+    dn mb = do
+        d <- respond mb
+        lift $ S.put d
+        return d
 {-# INLINABLE bindPull #-}
 
 {- $reexports
