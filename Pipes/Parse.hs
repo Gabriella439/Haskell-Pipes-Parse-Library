@@ -5,7 +5,6 @@
 module Pipes.Parse (
     -- * Pushback and Leftovers
     -- $pushback
-    Draw,
     draw,
     unDraw,
 
@@ -26,7 +25,13 @@ module Pipes.Parse (
     returnPull,
     bindPull,
 
-    -- Re-exports
+    -- * Type Synonyms
+    Draw,
+    Sink,
+    Source,
+    Conduit,
+
+    -- * Re-exports
     -- $reexports
     module Control.Monad.Trans.State.Strict
     ) where
@@ -46,13 +51,11 @@ import qualified Pipes.Prelude as P
     new input from upstream.
 -}
 
-data Draw = Draw
-
 {-| Like @request ()@, except try to use the leftovers buffer first
 
     A 'Nothing' return value indicates end of input.
 -}
-draw :: (Monad m) => Client Draw (Maybe a) (StateT [a] m) (Maybe a)
+draw :: (Monad m) => Sink a (StateT [a] m) (Maybe a)
 draw = do
     s <- lift S.get
     case s of
@@ -68,7 +71,7 @@ unDraw a = lift $ S.modify (a:)
 {-# INLINABLE unDraw #-}
 
 -- | Peek at the next element without consuming it
-peek :: (Monad m) => Client Draw (Maybe a) (StateT [a] m) (Maybe a)
+peek :: (Monad m) => Sink a (StateT [a] m) (Maybe a)
 peek = do
     ma <- draw
     case ma of
@@ -78,7 +81,7 @@ peek = do
 {-# INLINABLE peek #-}
 
 -- | Check if at end of input stream.
-isEndOfInput :: (Monad m) => Client Draw (Maybe a) (StateT [a] m) Bool
+isEndOfInput :: (Monad m) => Sink a (StateT [a] m) Bool
 isEndOfInput = do
     ma <- peek
     case ma of
@@ -90,7 +93,7 @@ isEndOfInput = do
 
     Note: 'drawAll' is usually an anti-pattern.
 -}
-drawAll :: (Monad m) => () -> Client Draw (Maybe a) (StateT [a] m) [a]
+drawAll :: (Monad m) => () -> Sink a (StateT [a] m) [a]
 drawAll = \() -> go id
   where
     go diffAs = do
@@ -101,7 +104,7 @@ drawAll = \() -> go id
 {-# INLINABLE drawAll #-}
 
 -- | Consume the input completely, discarding all values
-skipAll :: (Monad m) => () -> Client Draw (Maybe a) (StateT [a] m) ()
+skipAll :: (Monad m) => () -> Sink a (StateT [a] m) ()
 skipAll = \() -> go
   where
     go = do
@@ -112,9 +115,7 @@ skipAll = \() -> go
 {-# INLINABLE skipAll #-}
 
 -- | Forward up to the specified number of elements downstream
-passUpTo
-    :: (Monad m)
-    => Int -> Draw -> Proxy Draw (Maybe a) Draw (Maybe a) (StateT [a] m) r
+passUpTo :: (Monad m) => Int -> Draw -> Conduit a a (StateT [a] m) r
 passUpTo n0 = \_ -> go n0
   where
     go n0 =
@@ -131,10 +132,7 @@ passUpTo n0 = \_ -> go n0
 {-| Forward downstream as many consecutive elements satisfying a predicate as
     possible
 -}
-passWhile
-    :: (Monad m)
-    => (a -> Bool)
-    -> Draw -> Proxy Draw (Maybe a) Draw (Maybe a) (StateT [a] m) r
+passWhile :: (Monad m) => (a -> Bool) -> Draw -> Conduit a a (StateT [a] m) r
 passWhile pred = \_ -> go
   where
     go = do
@@ -202,8 +200,8 @@ using s = hoist lift . evalStateP s
 -}
 fmapPull
     :: (Monad m)
-    => (()   -> Pipe              a              b  m r)
-    -> (Draw -> Proxy Draw (Maybe a) Draw (Maybe b) m r)
+    => (()   -> Pipe    a b m r)
+    -> (Draw -> Conduit a b m r)
 fmapPull f = bindPull (f >-> returnPull)
 {-# INLINABLE fmapPull #-}
 
@@ -235,8 +233,8 @@ Or equivalently:
 -}
 bindPull
     :: (Monad m)
-    => (Draw -> Proxy ()          a  Draw (Maybe b) m r)
-    -> (Draw -> Proxy Draw (Maybe a) Draw (Maybe b) m r)
+    => (Draw -> Proxy () a Draw (Maybe b) m r)
+    -> (Draw -> Conduit  a             b  m r)
 bindPull f d = evalStateP d $ (up \>\ hoist lift . f />/ dn) d
   where
     up () = do
@@ -253,6 +251,18 @@ bindPull f d = evalStateP d $ (up \>\ hoist lift . f />/ dn) d
         lift $ S.put d
         return d
 {-# INLINABLE bindPull #-}
+
+-- | The 'Draw' type forces 
+data Draw = Draw
+
+-- | Like a 'Consumer', but can only use 'draw' to request input
+type Sink    a   m r = forall y' y . Proxy Draw (Maybe a) y' y m r
+
+-- | Like a 'Producer', except downstream pipes must use 'draw'
+type Source    b m r = forall x' x . Proxy x' x Draw (Maybe b) m r
+
+-- | Like a 'Pipe', but may only 'draw' or transmit 'draw' requests
+type Conduit a b m r = Proxy Draw (Maybe a) Draw (Maybe b) m r
 
 {- $reexports
 
