@@ -188,8 +188,13 @@ unwrap () = go
 -- | Run a sub-parser with an isolated leftovers buffer
 using
     :: (Monad m)
-    => s -> Proxy a' a b' b (StateT s m) r -> Proxy a' a b' b (StateT s m) r
-using s = hoist lift . evalStateP s
+    => [s]
+    -> Proxy a' a b' b (StateT [s] m) r
+    -> Proxy a' a b' b (StateT [s] m) r
+using s p = do
+    (r, s) <- hoist lift $ runStateP s p
+    lift $ S.modify (s ++)
+    return r
 
 {-| Lift a 'Maybe'-oblivious pipe to a 'Maybe'-aware pipe by auto-forwarding
     all 'Nothing's.
