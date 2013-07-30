@@ -12,18 +12,12 @@ Synopsis: Parsing infrastructure for the pipes ecosystem
 Description: This package defines the generic machinery necessary for common
     parsing tasks using @pipes@:
     .
-    * /End of input/: Detect and handle end of input
+    * /Leftovers/: Save unused input for later consumption
     .
-    * /Push-back/: Save unused input for later steps
+    * /Lens Support/: Zoom in on subsets of a stream using isomorphisms
     .
-    * /Lens Support/: Mix proxies with different leftover buffers using lenses
-    .
-    * /Compatibility/: Transparently upgrade proxies to work with @pipes-parse@
-    .
-    Import @Control.Proxy.Parse@ to use this library.
-    .
-    Read @Control.Proxy.Parse.Tutorial@ for an introductory tutorial.
-Category: Control, Pipes, Proxies, Parsing
+    Import @Pipes.Parse@ to use this library.
+Category: Control, Pipes, Parsing
 Source-Repository head
     Type: git
     Location: https://github.com/Gabriel439/Haskell-Pipes-Parse-Library
@@ -34,7 +28,5 @@ Library
         lens         >= 3.9     && < 4.0,
         pipes        >= 4.0     && < 4.1,
         transformers >= 0.2.0.0 && < 0.4
-    Exposed-Modules:
-        Pipes.Parse,
-        Pipes.Parse.Tutorial
+    Exposed-Modules: Pipes.Parse
     GHC-Options: -O2
