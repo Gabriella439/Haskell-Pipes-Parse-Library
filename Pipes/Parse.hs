@@ -1,11 +1,11 @@
 {-| @pipes-parse@ handles end-of-input and pushback by storing a 'Producer' in
-    a 'StateT' layer.  'input' provides 'Producer' that streams from the
+    a 'StateT' layer.  'input' provides a 'Producer' that streams from the
     underlying 'Producer'.  The difference is that any unused input from the
     stored 'Producer' is not lost, and is instead saved for later use.
 
-    For example, you can request off a single element at a time using
-    'Pipes.Prelude.head' from @Pipes.Prelude@.  The following code is not
-    idiomatic, but still demonstrates the underlying principle:
+    For example, you can request a single element at a time from the stored
+    'Producer' using 'Pipes.Prelude.head' from @Pipes.Prelude@.  The following
+    code is not idiomatic, but still demonstrates the underlying principle:
 
 > import Control.Monad (replicateM_)
 > import Pipes
@@ -26,11 +26,12 @@ Just 2
 Just 3
 Nothing
 
-    Unlike most parsing libraries, @pipes-parse@ does not expose a pushback
-    command.  Instead, you use 'zoom' from @Control.Lens@ to segment the
-    underlying 'Producer', which limits your sub-parser to a subset of the input
-    stream.  You specify the subset you are interested in using an isomorphism,
-    like 'splits' or 'spans':
+    Unlike most parsing libraries, @pipes-parse@ does not expose a \"pushback\"
+    command to return unused input to the underlying stream.  Instead, you use
+    'zoom' from @Control.Lens@ to segment the underlying 'Producer' and limit
+    your sub-parser to exactly the subset of the input stream that you require.
+    You specify the subset you are interested in using an isomorphism like
+    'splits' or 'spans':
 
 > -- A parser that prints all elements available to it
 > printAll :: (Show a) => StateT (Producer a IO r) IO ()
@@ -55,10 +56,10 @@ Intermission
 5
 6
 
-    There is no need to pushback unused elements because when you 'zoom' with an
+    There is no need to pushback unused elements.  When you 'zoom' in using an
     isomorphism like 'spans' or 'splits' they will simply forbid you from
     drawing more elements than you need.  In other words, the isomorphisms
-    handle the pushback, not the parser.
+    are responsible for handling the pushback, not the parser.
 -}
 
 module Pipes.Parse (
