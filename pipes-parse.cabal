@@ -12,6 +12,8 @@ Synopsis: Parsing infrastructure for the pipes ecosystem
 Description: This package defines the generic machinery necessary for common
     parsing tasks using @pipes@:
     .
+    * /Termination Safety/: Detect and recover from end of input
+    .
     * /Leftovers/: Save unused input for later consumption
     .
     * /Lens Support/: Zoom in on subsets of a stream using isomorphisms
