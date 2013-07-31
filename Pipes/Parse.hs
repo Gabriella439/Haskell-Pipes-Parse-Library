@@ -1,35 +1,135 @@
-{-| @pipes-parse@ handles end-of-input and pushback by storing a 'Producer' in
-    a 'StateT' layer.  'input' provides a 'Producer' that streams from the
-    underlying 'Producer'.  The difference is that any unused input from the
-    stored 'Producer' is not lost, and is instead saved for later use.
+-- | Parsing utilities for @pipes@
 
-    For example, you can request a single element at a time from the stored
-    'Producer' using 'Pipes.Prelude.head' from @Pipes.Prelude@.  The following
-    code is not idiomatic, but still demonstrates the underlying principle:
+module Pipes.Parse (
+    -- * Low-level Interface
+    -- $lowlevel
+    draw,
+    unDraw,
+    peek,
+    isEndOfInput,
 
-> import Control.Monad (replicateM_)
+    -- * High-level Interface
+    -- $highlevel
+    input,
+
+    -- * Isomorphisms
+    -- $isomorphisms
+    spans,
+    splits,
+
+    -- * Re-exports
+    -- $re-exports
+    module Control.Lens,
+    module Control.Monad.IO.Class,
+    module Control.Monad.Trans.State
+    ) where
+
+import Control.Lens (Iso', zoom)
+import qualified Control.Lens as L
+import Control.Monad (join, liftM)
+import Control.Monad.IO.Class (MonadIO(liftIO))
+import Control.Monad.Trans.Class (lift)
+import Control.Monad.Trans.State (StateT, runStateT, evalStateT, execStateT)
+import qualified Control.Monad.Trans.State as S
+import Data.Maybe (isNothing)
+import Pipes (Producer, yield, next)
+import Pipes.Core (Producer')
+
+{- $lowlevel
+    @pipes-parse@ handles end-of-input and pushback by storing a 'Producer' in
+    a 'StateT' layer.
+-}
+
+{-| Draw one element from the underlying 'Producer', returning 'Nothing' if the
+    'Producer' is empty
+-}
+draw :: (Monad m) => StateT (Producer a m r) m (Maybe a)
+draw = do
+    p <- S.get
+    x <- lift (next p)
+    case x of
+        Left   _      -> return Nothing
+        Right (a, p') -> do
+            S.put p'
+            return (Just a)
+{-# INLINABLE draw #-}
+
+-- | Push back an element onto the underlying 'Producer'
+unDraw :: (Monad m) => a -> StateT (Producer a m r) m ()
+unDraw a = S.modify (yield a >>)
+{-# INLINABLE unDraw #-}
+
+{-| 'peek' checks the first element of the stream, but uses 'unDraw' to push the
+    element back so that it is available for the next 'draw' command.
+
+> peek = do
+>     ma <- draw
+>     case ma of
+>         Nothing -> return ()
+>         Just a  -> unDraw a
+>     return ma
+-}
+peek :: (Monad m) => StateT (Producer a m r) m (Maybe a)
+peek = do
+    ma <- draw
+    case ma of
+        Nothing -> return ()
+        Just a  -> unDraw a
+    return ma
+{-# INLINABLE peek #-}
+
+{-| Check if the underlying 'Producer' is empty
+
+> isEndOfInput = liftM isNothing peek
+-}
+isEndOfInput :: (Monad m) => StateT (Producer a m r) m Bool
+isEndOfInput = liftM isNothing peek
+
+{- $highlevel
+    'input' provides a 'Producer' that streams from the underlying 'Producer'.
+
+    Streaming from 'input' differs from streaming directly from the underlying
+    'Producer' because any unused input is saved for later, as the following
+    example illustrates:
+
 > import Pipes
 > import Pipes.Parse
 > import qualified Pipes.Prelude as P
 > 
 > parser1 :: (Show a) => StateT (Producer a IO r) IO ()
-> parser1 = replicateM_ 4 $ do
->     x <- P.head input
->     liftIO $ print x
+> parser1 = do
+>     run $ for (input >-> P.take 2) (liftIO . print)
+>     lift $ putStrLn "Intermission"
+>     run $ for (input >-> P.take 2) (liftIO . print)
 
-    Each use of 'Pipes.Prelude.head' on 'input' advances the underlying
-    'Producer' instead of restarting from the beginning:
+    The second pipeline continues where the first pipeline left off:
 
->>>  evalStateT parser1 (each [1..3])
-Just 1
-Just 2
-Just 3
-Nothing
+>>> evalStateT parser1 (each [1..])
+1
+2
+Intermission
+3
+4
 
-    Unlike most parsing libraries, @pipes-parse@ does not expose a \"pushback\"
-    command to return unused input to the underlying stream.  Instead, you use
-    'zoom' from @Control.Lens@ to segment the underlying 'Producer' and limit
-    your sub-parser to exactly the subset of the input stream that you require.
+-}
+
+-- | Stream from the underlying 'Producer'
+input :: (Monad m) => Producer' a (StateT (Producer a m r) m) ()
+input = loop
+  where
+    loop = do
+        ma <- lift draw
+        case ma of
+            Nothing -> return ()
+            Just a  -> do
+                yield a
+                loop
+{-# INLINABLE input #-}
+
+{- $isomorphisms
+    You can use 'zoom' from @Control.Lens@ to segment the underlying 'Producer'
+    and limit your sub-parser to to a subset of the input stream.
+
     You specify the subset you are interested in using an isomorphism like
     'splits' or 'spans':
 
@@ -56,62 +156,28 @@ Intermission
 5
 6
 
-    There is no need to pushback unused elements.  When you 'zoom' in using an
-    isomorphism like 'spans' or 'splits' they will simply forbid you from
-    drawing more elements than you need.  In other words, the isomorphisms
-    are responsible for handling the pushback, not the parser.
+    This approach does not require you to push back any unused elements.  These
+    isomorphisms correctly return unused input back to the surrounding
+    parser when the 'zoom' completes.
+
+> parser3 :: StateT (Producer Int IO r) IO ()
+> parser3 = do
+>     -- This 'zoom' block will return back the unused 3 when it is done
+>     zoom (spans (< 4)) $ run $ for (input >-> P.take 2) (liftIO . print)
+> 
+>     liftIO $ putStrLn "Intermission"
+>
+>     zoom (splits 3) printAll
+
+>>> evalStateT parser3 (each [1..])
+1
+2
+Intermission
+3
+4
+5
+
 -}
-
-module Pipes.Parse (
-    -- * Input Stream
-    input,
-
-    -- * Isomorphisms
-    spans,
-    splits,
-
-    -- * Re-exports
-    -- $re-exports
-    module Control.Lens,
-    module Control.Monad.IO.Class,
-    module Control.Monad.Trans.State
-    ) where
-
-import Control.Lens (Iso', zoom)
-import qualified Control.Lens as L
-import Control.Monad (join)
-import Control.Monad.IO.Class (MonadIO(liftIO))
-import Control.Monad.Trans.Class (lift)
-import Control.Monad.Trans.State (StateT, runStateT, evalStateT, execStateT)
-import qualified Control.Monad.Trans.State as S
-import Pipes (Producer, yield, next)
-import Pipes.Core (Producer')
-
-_draw :: (Monad m) => StateT (Producer a m r) m (Maybe a)
-_draw = do
-    p <- S.get
-    x <- lift (next p)
-    case x of
-        Left   _      -> return Nothing
-        Right (e, p') -> do
-            S.put p'
-            return (Just e)
-
-{-| Stream from the stored 'Producer'
-
-    Streaming from 'input' differs from streaming directly from the underlying
-    'Producer' because any unused input is saved for later.
--}
-input :: (Monad m) => Producer' a (StateT (Producer a m r) m) ()
-input = loop
-  where
-    loop = do
-        me <- lift _draw
-        case me of
-            Nothing -> return ()
-            Just e  -> do
-                yield e
-                loop
 
 _span
     :: (Monad m)
@@ -122,12 +188,12 @@ _span predicate = loop
         x <- lift (next p)
         case x of
             Left   r      -> return (return r)
-            Right (e, p') ->
-                if (predicate e)
+            Right (a, p') ->
+                if (predicate a)
                 then do
-                    yield e
+                    yield a
                     loop p'
-                else return (yield e >> p')
+                else return (yield a >> p')
 
 {-| Isomorphism between a 'Producer' and the prefix \/ suffix generated by
     splitting the 'Producer' in a manner analogous to 'span'
@@ -139,6 +205,7 @@ spans
     :: (Monad m)
     => (a -> Bool) -> Iso' (Producer a m r) (Producer a m (Producer a m r))
 spans predicate = L.iso (_span predicate) join
+{-# INLINABLE spans #-}
 
 _splitAt :: (Monad m) => Int -> Producer a m r -> Producer a m (Producer a m r)
 _splitAt n p =
@@ -148,10 +215,9 @@ _splitAt n p =
         x <- lift $ next p
         case x of
             Left   r      -> return (return r)
-            Right (e, p') -> do
-                yield e
+            Right (a, p') -> do
+                yield a
                 _splitAt (n - 1) p'
-
 
 {-| Isomorphism between a 'Producer' and the prefix \/ suffix generated by
     splitting the 'Producer' in a manner analogous to 'splitAt'
@@ -161,6 +227,7 @@ _splitAt n p =
 splits
     :: (Monad m) => Int -> Iso' (Producer a m r) (Producer a m (Producer a m r))
 splits n = L.iso (_splitAt n) join
+{-# INLINABLE splits #-}
 
 {- $re-exports
     @Control.Lens@ re-exports 'zoom' and 'Iso''.
