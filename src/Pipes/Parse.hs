@@ -1,5 +1,7 @@
 -- | Parsing utilities for @pipes@
 
+{-# OPTIONS_GHC -fno-warn-unused-do-bind #-}
+
 module Pipes.Parse (
     -- * Low-level Interface
     -- $lowlevel
