@@ -25,6 +25,7 @@ Source-Repository head
     Location: https://github.com/Gabriel439/Haskell-Pipes-Parse-Library
 
 Library
+    HS-Source-Dirs: src
     Build-Depends:
         base         >= 4       && < 5  ,
         lens         >= 3.9     && < 4.0,
