@@ -18,7 +18,7 @@ Description: This package defines the generic machinery necessary for common
     .
     * /Lens Support/: Zoom in on subsets of a stream using isomorphisms
     .
-    Import @Pipes.Parse@ to use this library.
+    @Pipes.Parse@ contains the full documentation for this library.
 Category: Control, Pipes, Parsing
 Source-Repository head
     Type: git
