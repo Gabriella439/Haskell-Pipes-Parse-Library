@@ -16,7 +16,7 @@ Then fire up ` ghci`:
     Prelude Pipes> import Pipes.Parse as Parse
     Prelude Pipes Parse> :set -XNoMonomorphismRestriction
 
-... and print the all consecutive elements less than 4:
+... and parse only consecutive input elements less than 4:
 
     Prelude Pipes Parse> let printAll = run $ for input (liftIO . print)
     Prelude Pipes Parse> let parser   = zoom (spans (< 4)) printAll
@@ -27,17 +27,17 @@ Then fire up ` ghci`:
     Prelude Pipes Pipes.Parse P> -- Done!
 
 The official tutorial is on
-[Hackage](http://hackage.haskell.org/package/pipes-parse].
+[Hackage](http://hackage.haskell.org/package/pipes-parse).
 
 ## Features
 
-* Concise API: Just use `draw` and `unDraw` or `input`
+* *Concise API*: Just use `draw` and `unDraw` or `input`
 
-* Termination Safety: Detect and recover from end of input
+* *Termination Safety*: Detect and recover from end of input
 
-* Leftovers: Save unused input for later consumption
+* *Leftovers*: Save unused input for later consumption
 
-* Lens Support: Zoom in on subsets of a stream using isomorphisms
+* *Lens Support*: Zoom in on subsets of a stream using isomorphisms
 
 ## Outline
 
@@ -65,8 +65,6 @@ request help:
 * [Mailing list](mailto:haskell-pipes@googlegroups.com) ([Google Group](https://groups.google.com/forum/?fromgroups#!forum/haskell-pipes))
 
 ## How to contribute
-
-* Contribute code
 
 * Build derived libraries
 
