@@ -9,8 +9,10 @@ Author: Gabriel Gonzalez
 Maintainer: Gabriel439@gmail.com
 Bug-Reports: https://github.com/Gabriel439/Haskell-Pipes-Parse-Library/issues
 Synopsis: Parsing infrastructure for the pipes ecosystem
-Description: This package defines the generic machinery necessary for common
-    parsing tasks using @pipes@:
+Description: @pipes-parse@ builds upon the @pipes@ library to provide shared
+    streaming parsing utilities:
+    .
+    * /Concise API/: Just use @draw@ and @unDraw@ or @input@
     .
     * /Termination Safety/: Detect and recover from end of input
     .
