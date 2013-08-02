@@ -108,7 +108,9 @@ isEndOfInput = liftM isNothing peek
 > parser1 :: (Show a) => StateT (Producer a IO r) IO ()
 > parser1 = do
 >     run $ for (input >-> P.take 2) (liftIO . print)
->     lift $ putStrLn "Intermission"
+>
+>     liftIO $ putStrLn "Intermission"
+>
 >     run $ for (input >-> P.take 2) (liftIO . print)
 
     The second pipeline continues where the first pipeline left off:
