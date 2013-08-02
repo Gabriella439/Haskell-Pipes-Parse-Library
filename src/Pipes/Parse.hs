@@ -1,5 +1,6 @@
 -- | Parsing utilities for @pipes@
 
+{-# LANGUAGE RankNTypes #-}
 {-# OPTIONS_GHC -fno-warn-unused-do-bind #-}
 
 module Pipes.Parse (
@@ -104,7 +105,7 @@ isEndOfInput = liftM isNothing peek
 > import Pipes
 > import Pipes.Parse
 > import qualified Pipes.Prelude as P
-> 
+>
 > parser1 :: (Show a) => StateT (Producer a IO r) IO ()
 > parser1 = do
 >     run $ for (input >-> P.take 2) (liftIO . print)
@@ -152,7 +153,7 @@ input = loop
 > parser2 = do
 >     -- Restrict the first sub-parser to elements less than 4
 >     zoom (spans (< 4)) printAll
-> 
+>
 >     liftIO $ putStrLn "Intermission"
 >
 >     -- Restrict the second sub-parser to the next three elements
@@ -175,7 +176,7 @@ Intermission
 > parser3 = do
 >     -- This 'zoom' block will return back the unused 3 when it is done
 >     zoom (spans (< 4)) $ run $ for (input >-> P.take 2) (liftIO . print)
-> 
+>
 >     liftIO $ putStrLn "Intermission"
 >
 >     zoom (splitsAt 3) printAll
