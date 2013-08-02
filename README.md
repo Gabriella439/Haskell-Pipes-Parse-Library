@@ -2,7 +2,7 @@
 
 `pipes-parse` builds upon
 [the `pipes` library](https://github.com/Gabriel439/Haskell-Pipes-Library) to
-provide shared parsing utilities that provide support for:
+provide shared streaming parsing utilities.
 
 ## Quick start
 
