@@ -141,8 +141,8 @@ input = loop
     You can use 'zoom' from @Control.Lens@ to segment the underlying 'Producer'
     and limit your sub-parser to to a subset of the input stream.
 
-    You specify the subset you are interested in using an isomorphism like
-    'splitsAt' or 'spans':
+    You specify the subset you want using an isomorphism like 'splitsAt' or
+    'spans':
 
 > -- A parser that prints all elements available to it
 > printAll :: (Show a) => StateT (Producer a IO r) IO ()
