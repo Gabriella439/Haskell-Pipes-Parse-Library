@@ -14,17 +14,17 @@ Then fire up ` ghci`:
     $ ghci
     Prelude> import Pipes
     Prelude Pipes> import Pipes.Parse as Parse
-    Prelude Pipes Parse> :set -XNoMonomorphismRestriction
+    Prelude Pipes Parse> import Control.Lens as Lens
 
 ... and parse only consecutive input elements less than 4:
 
-    Prelude Pipes Parse> let printAll = run $ for input (liftIO . print)
-    Prelude Pipes Parse> let parser   = zoom (spans (< 4)) printAll
-    Prelude Pipes Parse> evalStateT parser (each [1..])
+    Prelude Pipes Parse Lens> let printAll = run $ for input (lift . lift . print)
+    Prelude Pipes Parse Lens> let parser   = zoom (spans (< 4)) printAll
+    Prelude Pipes Parse Lens> evalStateT parser (each [1..])
     1
     2
     3
-    Prelude Pipes Pipes.Parse P> -- Done!
+    Prelude Pipes Parse Lens> -- Done!
 
 The official tutorial is on
 [Hackage](http://hackage.haskell.org/package/pipes-parse).
@@ -50,10 +50,6 @@ behind this is to stabilize the parsing API, which is a crucial component of the
 
 `pipes-parse` is complete and if the API does not change by the end of 2013 then
 the library will be officially stabilized.
-
-The only planned update to this library is to switch to a smaller `lens-core`
-dependency for isomorphism support if Edward Kmett releases that package to
-Hackage.  This will be a backwards compatible change.
 
 ## Community Resources
 
