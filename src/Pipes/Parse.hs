@@ -26,12 +26,10 @@ module Pipes.Parse (
 
     -- * Re-exports
     -- $re-exports
-    module Control.Monad.IO.Class,
     module Control.Monad.Trans.State.Strict
     ) where
 
 import Control.Monad (join, liftM)
-import Control.Monad.IO.Class (MonadIO(liftIO))
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.State.Strict (
     StateT, runStateT, evalStateT, execStateT )
@@ -100,6 +98,7 @@ isEndOfInput = liftM isNothing peek
     'Producer' because any unused input is saved for later, as the following
     example illustrates:
 
+> import Control.Monad.IO.Class (liftIO)
 > import Pipes
 > import Pipes.Parse
 > import qualified Pipes.Prelude as P
@@ -296,6 +295,4 @@ splitUsing p src = execStateP src (input >-> p)
 {- $re-exports
     @Control.Monad.Trans.State.Strict@ re-exports 'StateT' (the type),
     'runStateT', 'evalStateT', and 'execStateT'.
-
-    @Control.Monad.IO.Class@ re-exports 'MonadIO'.
 -}
