@@ -38,7 +38,7 @@ module Pipes.Parse (
 import Control.Monad (liftM, unless)
 import qualified Control.Monad.Trans.Free as F
 import Control.Monad.Trans.Class (lift)
-import Control.Monad.Trans.Free (FreeT(FreeT, runFreeT))
+import Control.Monad.Trans.Free (FreeF(Pure, Free), FreeT(FreeT, runFreeT))
 import qualified Control.Monad.Trans.State.Strict as S
 import Control.Monad.Trans.State.Strict (
     StateT(StateT, runStateT), evalStateT, execStateT )
@@ -67,7 +67,9 @@ groupBy equal = loop
         case x of
             Left  r       -> return r
             Right (a, p1) -> do
-                p2 <- F.liftF $ execStateP p1 $ input >-> takeWhile (equal a)
+                p2 <- F.liftF $ execStateP p1 $ do
+                    yield a
+                    input >-> takeWhile (equal a)
                 loop p2
 {-# INLINABLE groupBy #-}
 
@@ -93,7 +95,7 @@ splitOn predicate = loop
   where
     loop p = do
         (stop, p') <- F.liftF $ runStateP p $ do
-            input >-> takeWhile predicate
+            input >-> takeWhile (not . predicate)
             lift $ liftM isNothing draw
         unless stop (loop p')
 {-# INLINABLE splitOn #-}
@@ -110,8 +112,8 @@ concat = loop
     loop f = do
         x <- lift (runFreeT f)
         case x of
-            F.Pure r -> return r
-            F.Free p -> do
+            Pure r -> return r
+            Free p -> do
                 f' <- p
                 concat f'
 {-# INLINABLE concat #-}
@@ -127,15 +129,15 @@ intercalate sep = loop0
     loop0 f = do
         x <- lift (runFreeT f)
         case x of
-            F.Pure r -> return r
-            F.Free p -> do
+            Pure r -> return r
+            Free p -> do
                 f' <- p
                 loop1 f'
     loop1 f = do
         x <- lift (runFreeT f)
         case x of
-            F.Pure r -> return r
-            F.Free p -> do
+            Pure r -> return r
+            Free p -> do
                 sep
                 f' <- p
                 loop1 f'
@@ -256,7 +258,7 @@ takeWhile predicate = loop
 {-# INLINABLE takeWhile #-}
 
 {- $reexports
-    @Control.Monad.Trans.Free@ re-exports 'FreeT' and 'runFreeT'.
+    @Control.Monad.Trans.Free@ re-exports 'FreeF', 'FreeT', and 'runFreeT'.
 
     @Control.Monad.Trans.State.Strict@ re-exports 'StateT', 'runStateT',
     'evalStateT', and 'execStateT'.
