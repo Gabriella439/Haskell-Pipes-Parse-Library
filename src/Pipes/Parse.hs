@@ -1,4 +1,40 @@
--- | Element-agnostic Parsing utilities for @pipes@
+{-| Element-agnostic parsing utilities for @pipes@
+
+    One of the disadvantages of 'Pipe's is that they cannot intercept and
+    handle end of input.  For example, you would not be able to write a
+    'group' 'Pipe' that grouped equal elements like this:
+
+> group :: (Monad m, Eq a) => Pipe a [a] m r
+
+    This would not work because you would be unable to flush the final group of
+    elements upon reaching end of input.
+
+    Instead, the only way to handle these cases is to write a function from a
+    'Producer' to a new 'Producer':
+
+> group :: (Monad m, Eq a) => Producer a m () -> Producer [a] m ()
+
+    @pipes-parse@ makes these kinds of functions easier to write:
+
+> import Pipes
+> import Pipes.Parse as Parse
+> import Pipes.Prelude (toListM)
+> 
+> group :: (Monad m, Eq a) => Producer a m () -> Producer [a] m ()
+> group p = evalStateP p loop
+>   where
+>     loop = do
+>         ma <- lift draw
+>         case ma of
+>             Nothing -> return ()
+>             Just a -> do
+>                 as <- lift $ toListM (input >-> Parse.takeWhile (== a))
+>                 yield (a:as)
+>                 loop
+
+    As a bonus, you also gain the ability to easily consume a 'Producer'
+    incrementally instead of all at once, as described below.
+-}
 
 {-# LANGUAGE RankNTypes #-}
 
@@ -19,7 +55,8 @@ module Pipes.Parse (
 
     -- * Re-exports
     -- $re-exports
-    module Control.Monad.Trans.State.Strict
+    module Control.Monad.Trans.State.Strict,
+    module Pipes.Lift
     ) where
 
 import Control.Monad (liftM)
@@ -30,6 +67,7 @@ import qualified Control.Monad.Trans.State.Strict as S
 import Data.Maybe (isNothing)
 import Pipes (Producer, Pipe, await, yield, next)
 import Pipes.Core (Producer')
+import Pipes.Lift (runStateP, evalStateP, execStateP)
 import Prelude hiding (takeWhile)
 
 {- $lowlevel
@@ -205,4 +243,6 @@ takeWhile predicate = loop
 {- $re-exports
     @Control.Monad.Trans.State.Strict@ re-exports 'StateT' (the type),
     'runStateT', 'evalStateT', and 'execStateT'.
+
+    @Pipes.Lift@ re-exports 'runStateP', 'evalStateP', and 'execStateP'.
 -}
