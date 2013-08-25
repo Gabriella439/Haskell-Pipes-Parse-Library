@@ -53,22 +53,33 @@ module Pipes.Parse (
     -- * Utilities
     takeWhile,
 
+    -- * Splitters
+    groupBy,
+    chunksOf,
+    splitOn,
+
+    -- * Joiners
+    concat,
+    intercalate,
+
     -- * Re-exports
     -- $re-exports
     module Control.Monad.Trans.State.Strict,
     module Pipes.Lift
     ) where
 
-import Control.Monad (liftM)
+import Control.Monad (liftM, unless)
+import Control.Monad.Trans.Free
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.State.Strict (
     StateT, runStateT, evalStateT, execStateT )
 import qualified Control.Monad.Trans.State.Strict as S
 import Data.Maybe (isNothing)
-import Pipes (Producer, Pipe, await, yield, next)
+import Pipes (Producer, Pipe, await, yield, next, (>->))
 import Pipes.Core (Producer')
 import Pipes.Lift (runStateP, evalStateP, execStateP)
-import Prelude hiding (takeWhile)
+import qualified Pipes.Prelude as P
+import Prelude hiding (concat, takeWhile)
 
 {- $lowlevel
     @pipes-parse@ handles end-of-input and pushback by storing a 'Producer' in
@@ -239,6 +250,88 @@ takeWhile predicate = loop
                 loop
             else lift (unDraw a)
 {-# INLINABLE takeWhile #-}
+
+{-| Split a 'Producer' into a `FreeT`-delimited stream of 'Producer's grouped by
+    the supplied equality predicate
+-}
+groupBy
+    :: (Monad m)
+    => (a -> a -> Bool) -> Producer a m () -> FreeT (Producer a m) m ()
+groupBy equal = loop
+  where
+    loop p = do
+        x <- lift (next p)
+        case x of
+            Left  r       -> return r
+            Right (a, p1) -> do
+                p2 <- liftF $ execStateP p1 $ input >-> takeWhile (equal a)
+                loop p2
+{-# INLINABLE groupBy #-}
+
+{-| Split a 'Producer' into a `FreeT`-delimited stream of 'Producer's of the
+    given chunk size
+-}
+chunksOf :: (Monad m) => Int -> Producer a m () -> FreeT (Producer a m) m () 
+chunksOf n = loop
+  where
+    loop p = do
+        (eof, p') <- liftF $ runStateP p $ do
+            input >-> P.take n
+            lift isEndOfInput
+        unless eof (loop p')
+{-# INLINABLE chunksOf #-}
+
+{-| Split a 'Producer' into a `FreeT`-delimited stream of 'Producer's separated
+    by elements that satisfy the given predicate
+-}
+splitOn
+    :: (Monad m) => (a -> Bool) -> Producer a m () -> FreeT (Producer a m) m ()
+splitOn predicate = loop
+  where
+    loop p = do
+        (stop, p') <- liftF $ runStateP p $ do
+            input >-> takeWhile predicate
+            lift $ liftM isNothing draw
+        unless stop (loop p')
+{-# INLINABLE splitOn #-}
+
+-- | Join a 'FreeT'-delimited stream of 'Producer's into a single 'Producer'
+concat :: (Monad m) => FreeT (Producer a m) m () -> Producer a m ()
+concat = loop
+  where
+    loop f = do
+        x <- lift (runFreeT f)
+        case x of
+            Pure r -> return r
+            Free p -> do
+                f' <- p
+                concat f'
+{-# INLINABLE concat #-}
+
+{-| Join a 'FreeT'-delimited stream of 'Producer's into a single 'Producer' by
+    intercalating a 'Producer' in between them
+-}
+intercalate
+    :: (Monad m)
+    => Producer a m () -> FreeT (Producer a m) m () -> Producer a m ()
+intercalate sep = loop0
+  where
+    loop0 f = do
+        x <- lift (runFreeT f)
+        case x of
+            Pure r -> return r
+            Free p -> do
+                f' <- p
+                loop1 f'
+    loop1 f = do
+        x <- lift (runFreeT f)
+        case x of
+            Pure r -> return r
+            Free p -> do
+                sep
+                f' <- p
+                loop1 f'
+{-# INLINABLE intercalate #-}
 
 {- $re-exports
     @Control.Monad.Trans.State.Strict@ re-exports 'StateT' (the type),
