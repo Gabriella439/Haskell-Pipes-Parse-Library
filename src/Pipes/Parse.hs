@@ -1,4 +1,4 @@
--- | Parsing utilities for @pipes@
+-- | Element-agnostic Parsing utilities for @pipes@
 
 {-# LANGUAGE RankNTypes #-}
 
@@ -81,6 +81,7 @@ peek = do
 -}
 isEndOfInput :: (Monad m) => StateT (Producer a m r) m Bool
 isEndOfInput = liftM isNothing peek
+{-# INLINABLE isEndOfInput #-}
 
 {- $highlevel
     'input' provides a 'Producer' that streams from the underlying 'Producer'.
@@ -94,17 +95,17 @@ isEndOfInput = liftM isNothing peek
 > import Pipes.Parse
 > import qualified Pipes.Prelude as P
 >
-> parser1 :: (Show a) => StateT (Producer a IO r) IO ()
-> parser1 = do
->     run $ for (input >-> P.take 2) (liftIO . print)
+> parser :: (Show a) => StateT (Producer a IO r) IO ()
+> parser = do
+>     run $ input >-> P.take 2 >-> P.show >-> hoist liftIO P.stdout
 >
 >     liftIO $ putStrLn "Intermission"
 >
->     run $ for (input >-> P.take 2) (liftIO . print)
+>     run $ input >-> P.take 2 >-> P.show >-> hoist liftIO P.stdout
 
-    The second pipeline continues where the first pipeline left off:
+    The second pipeline resumes where the first pipeline left off:
 
->>> evalStateT parser1 (each [1..])
+>>> evalStateT parser (each [1..])
 1
 2
 Intermission
