@@ -37,14 +37,14 @@
 > import qualified Pipes.Parse as Parse
 > import qualified Pipes.Prelude as Prelude
 >
-> firstThreeGroups :: (Monad m, Eq a) => Producer a m () -> Producer a m ()
-> firstThreeGroups = Parse.concat . Parse.takeFree 3 . Parse.groupBy (==)
-> --                 ^ Joiner       ^ Transformation   ^ Splitter
+> threeGroups :: (Monad m, Eq a) => Producer a m () -> Producer a m ()
+> threeGroups = Parse.concat . Parse.takeFree 3 . Parse.groupBy (==)
+> --            ^ Joiner       ^ Transformation   ^ Splitter
 
     This then limits standard input to the first three consecutive groups of
     equal lines:
 
->>> run $ firstThreeGroups Prelude.stdin >-> Prelude.stdout
+>>> run $ threeGroups Prelude.stdin >-> Prelude.stdout
 Group1<Enter>
 Group1
 Group1<Enter>

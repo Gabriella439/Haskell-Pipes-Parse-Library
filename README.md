@@ -9,6 +9,29 @@ provide shared streaming parsing utilities.
 * Install the [Haskell Platform](http://www.haskell.org/platform/)
 * `cabal install pipes-parse`
 
+Then fire up `ghci`:
+
+    Prelude> import Pipes
+    Prelude Pipes> import qualified Pipes.Prelude as P
+    Prelude Pipes P> import qualified Pipes.Parse as P
+
+... and limit standard input to first three consecutive groups of equal lines:
+
+    Prelude Pipes P P> let threeGroups = P.concat . P.takeFree 3 . P.groupBy (==)
+    Prelude Pipes P P> run $ threeGroups P.stdin >-> P.stdout
+    Group1<Enter>
+    Group1
+    Group1<Enter>
+    Group1
+    Group2<Enter>
+    Group2
+    Group3<Enter>
+    Group3
+    Group3<Enter>
+    Group3
+    Group4<Enter>
+    Prelude Pipes P P> -- Done, because we began entering our fourth group
+
 The official tutorial is on
 [Hackage](http://hackage.haskell.org/package/pipes-parse).
 
