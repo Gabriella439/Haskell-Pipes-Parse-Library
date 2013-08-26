@@ -129,23 +129,23 @@ concat = loop
 intercalate
     :: (Monad m)
     => Producer a m () -> FreeT (Producer a m) m () -> Producer a m ()
-intercalate sep = loop0
+intercalate sep = go0
   where
-    loop0 f = do
+    go0 f = do
         x <- lift (runFreeT f)
         case x of
             Pure r -> return r
             Free p -> do
                 f' <- p
-                loop1 f'
-    loop1 f = do
+                go1 f'
+    go1 f = do
         x <- lift (runFreeT f)
         case x of
             Pure r -> return r
             Free p -> do
                 sep
                 f' <- p
-                loop1 f'
+                go1 f'
 {-# INLINABLE intercalate #-}
 
 {- $lowlevel
