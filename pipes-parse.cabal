@@ -12,9 +12,7 @@ Synopsis: Parsing infrastructure for the pipes ecosystem
 Description: @pipes-parse@ builds upon the @pipes@ library to provide shared
     parsing idioms and utilities:
     .
-    * /Perfect Streaming/: Use @FreeT@ to avoid collecting input elements
-    .
-    * /Concise Parsing API/: Just use @draw@ and @unDraw@ or @input@
+    * /Perfect Streaming/: Program in a list-like style in constant memory
     .
     * /Leftovers/: Save unused input for later consumption
     .

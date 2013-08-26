@@ -14,7 +14,7 @@ The official tutorial is on
 
 ## Features
 
-* *Perfect Streaming*: Use `FreeT` to avoid collecting input elements
+* *Perfect Streaming*: Program in a list-like style in constant memory
 
 * *Concise Parsing API*: Just use `draw` and `unDraw` or `input`
 

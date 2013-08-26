@@ -1,30 +1,97 @@
--- | Element-agnostic parsing utilities for @pipes@
+{-| Element-agnostic parsing utilities for @pipes@
+
+    @pipes-parse@ provides two ways to parse and transform streams in constant
+    space:
+
+    * The \"list-like\" approach, using the split \/ transform \/ join paradigm
+
+    * The monadic approach, using parser combinators
+
+    The top half of this module provides the list-like approach.  The key idea
+    is that:
+    
+> -- '~' means "is analogous to"
+> Producer a m ()               ~   [a]
+>
+> FreeT (Producer a m ()) m ()  ~  [[a]]
+
+    'FreeT' nests each subsequent 'Producer' within the return value of the
+    previous 'Producer' so that you cannot access the next 'Producer' until you
+    completely drain the current 'Producer'.  However, you rarely need to work
+    with 'FreeT' directly.  Instead, you structure everything using
+    \"splitters\", \"transformations\" and \"joiners\":
+
+> -- A "splitter"
+> Producer a m ()              -> FreeT (Producer a m ()) m ()  ~   [a]  -> [[a]]
+>
+> -- A "transformation"
+> FreeT (Producer a m ()) m () -> FreeT (Producer a m ()) m ()  ~  [[a]] -> [[a]]
+>
+> -- A "joiner"
+> FreeT (Producer a m ()) m () -> Producer a m ()               ~  [[a]] ->  [a]
+
+    For example, if you wanted to group standard input by equal lines and take
+    the first three groups, you would write:
+
+> import Pipes
+> import qualified Pipes.Parse as Parse
+> import qualified Pipes.Prelude as Prelude
+>
+> firstThreeGroups :: (Monad m, Eq a) => Producer a m () -> Producer a m ()
+> firstThreeGroups = Parse.concat . Parse.takeFree 3 . Parse.groupBy (==)
+> --                 ^ Joiner       ^ Transformation   ^ Splitter
+
+    This then limits standard input to the first three consecutive groups of
+    equal lines:
+
+>>> run $ firstThreeGroups Prelude.stdin >-> Prelude.stdout
+Group1<Enter>
+Group1
+Group1<Enter>
+Group1
+Group2<Enter>
+Group2
+Group3<Enter>
+Group3
+Group3<Enter>
+Group3
+Group4<Enter>
+>>> -- Done, because we began entering our fourth group
+
+    The advantage of this style or programming is that you never bring more than
+    a single element into memory.  This works because `FreeT` sub-divides the
+    `Producer` without concatenating elements together, preserving the laziness
+    of the underlying 'Producer'.
+
+    The bottom half of this module contains the lower-level monadic parsing
+    primitives.  These are more useful for `pipes` implementers, particularly
+    for building splitters.  I recommend that application developers use the
+    list-like style whenever possible.
+-}
 
 {-# LANGUAGE RankNTypes #-}
 
 module Pipes.Parse (
     -- * Splitters
-    -- $splitters
     groupBy,
     chunksOf,
     splitOn,
 
+    -- * Transformations
+    takeFree,
+
     -- * Joiners
-    -- $joiners
     concat,
     intercalate,
 
-    -- * FreeT
-    takeFree,
-
-    -- * Low-level Interface
+    -- * Low-level Parsers
     -- $lowlevel
     draw,
     unDraw,
     peek,
     isEndOfInput,
 
-    -- * High-level Interface
+    -- * High-level Parsers
     -- $highlevel
     input,
 
@@ -51,16 +118,6 @@ import Pipes.Core (Producer')
 import Pipes.Lift (runStateP, evalStateP, execStateP)
 import qualified Pipes.Prelude as P
 import Prelude hiding (concat, takeWhile, take)
-
-{- $splitters
-    @pipes-parse@ uses 'FreeT' to sub-divide streams into groups without
-    collecting elements in memory.
-
-    Think of @(Producer a m ())@ as being analogous to @[a]@ and
-    @(FreeT (Producer a m) ())@ as being analogous to @[[a]]@.  'FreeT' in this
-    case behaves like a linked list of 'Producer's where you must drain each
-    'Producer' to completion before you can advance to the next 'Producer'.
--}
 
 {-| Split a 'Producer' into a `FreeT`-delimited stream of 'Producer's grouped by
     the supplied equality predicate
@@ -107,11 +164,6 @@ splitOn predicate = loop
             lift $ liftM isNothing draw
         unless stop (loop p')
 {-# INLINABLE splitOn #-}
-
-{- $joiners
-    Use the following joining functions to collect 'FreeT'-delimited streams of
-    'Producer's back into a single 'Producer' while still preserving streaming.
--}
 
 -- | Join a 'FreeT'-delimited stream of 'Producer's into a single 'Producer'
 concat :: (Monad m) => FreeT (Producer a m) m () -> Producer a m ()
