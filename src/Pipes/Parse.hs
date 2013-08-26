@@ -161,7 +161,9 @@ draw = do
     p <- S.get
     x <- lift (next p)
     case x of
-        Left   _      -> return Nothing
+        Left   r      -> do
+            S.put (return r)
+            return Nothing
         Right (a, p') -> do
             S.put p'
             return (Just a)
