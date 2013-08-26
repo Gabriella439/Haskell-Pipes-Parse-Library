@@ -14,6 +14,9 @@ module Pipes.Parse (
     concat,
     intercalate,
 
+    -- * FreeT
+    takeFree,
+
     -- * Low-level Interface
     -- $lowlevel
     draw,
@@ -47,7 +50,7 @@ import Pipes (Producer, Pipe, await, yield, next, (>->))
 import Pipes.Core (Producer')
 import Pipes.Lift (runStateP, evalStateP, execStateP)
 import qualified Pipes.Prelude as P
-import Prelude hiding (concat, takeWhile)
+import Prelude hiding (concat, takeWhile, take)
 
 {- $splitters
     @pipes-parse@ uses 'FreeT' to sub-divide streams into groups without
@@ -147,6 +150,20 @@ intercalate sep = go0
                 f' <- p
                 go1 f'
 {-# INLINABLE intercalate #-}
+
+-- | @(take n)@ only keeps the first @n@ functor layers of a 'FreeT'
+takeFree :: (Functor f, Monad m) => Int -> FreeT f m r -> FreeT f m ()
+takeFree = go
+  where
+    go n f =
+        if (n > 0)
+        then FreeT $ do
+            x <- runFreeT f
+            case x of
+                Pure _ -> return (Pure ())
+                Free w -> return (Free (fmap (go $! n - 1) w))
+        else return ()
+{-# INLINABLE takeFree #-}
 
 {- $lowlevel
     @pipes-parse@ handles end-of-input and pushback by storing a 'Producer' in
