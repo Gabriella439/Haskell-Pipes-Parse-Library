@@ -9,42 +9,30 @@ provide shared streaming parsing utilities.
 * Install the [Haskell Platform](http://www.haskell.org/platform/)
 * `cabal install pipes-parse`
 
-Then fire up ` ghci`:
-
-    $ ghci
-    Prelude> import Pipes
-    Prelude Pipes> import Pipes.Parse as Parse
-    Prelude Pipes Parse> import Control.Lens as Lens
-
-... and parse only consecutive input elements less than 4:
-
-    Prelude Pipes Parse Lens> let printAll = run $ for input (lift . lift . print)
-    Prelude Pipes Parse Lens> let parser   = zoom (spans (< 4)) printAll
-    Prelude Pipes Parse Lens> evalStateT parser (each [1..])
-    1
-    2
-    3
-    Prelude Pipes Parse Lens> -- Done!
-
 The official tutorial is on
 [Hackage](http://hackage.haskell.org/package/pipes-parse).
 
 ## Features
 
-* *Concise API*: Just use `draw` and `unDraw` or `input`
+* *Perfect Streaming*: Use `FreeT` to avoid collecting input elements
 
-* *Termination Safety*: Detect and recover from end of input
+* *Concise Parsing API*: Just use `draw` and `unDraw` or `input`
 
 * *Leftovers*: Save unused input for later consumption
 
-* *Lens Support*: Zoom in on subsets of a stream using isomorphisms
+* *Connect and Resume*: Use `StateT` to save unused input for later
+
+* *Termination Safety*: Detect and recover from end of input
 
 ## Outline
 
-`pipes-parse` only provides the minimal tools necessary for datatype agnostic
-parsing.  Datatype-specific parsers belong in derived libraries.  The purpose
-behind this is to stabilize the parsing API, which is a crucial component of the
-`pipes` ecosystem and also to avoid scope creep.
+`pipes-parse` provides generic examples for how to parse streams using `pipes`.
+Datatype-specific parsers belong in separate libraries.  The purpose behind
+this library is to provide example idioms that other libraries can reuse,
+as well as providing useful tools for generic stream parsing.  Typically,
+stream-specific parsing libraries will need to redefine specialized versions of
+the primitives in this library and will probably not need to depend on
+`pipes-parse` at all.
 
 ## Development Status
 
