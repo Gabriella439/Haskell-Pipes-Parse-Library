@@ -101,8 +101,7 @@ module Pipes.Parse (
     -- * Re-exports
     -- $reexports
     module Control.Monad.Trans.Free,
-    module Control.Monad.Trans.State.Strict,
-    module Pipes.Lift
+    module Control.Monad.Trans.State.Strict
     ) where
 
 import Control.Monad (liftM, unless)
@@ -115,7 +114,7 @@ import Control.Monad.Trans.State.Strict (
 import Data.Maybe (isNothing)
 import Pipes (Producer, Pipe, await, yield, next, (>->))
 import Pipes.Core (Producer')
-import Pipes.Lift (runStateP, evalStateP, execStateP)
+import Pipes.Lift (runStateP, execStateP)
 import qualified Pipes.Prelude as P
 import Prelude hiding (concat, takeWhile, take)
 
@@ -278,6 +277,7 @@ isEndOfInput = liftM isNothing peek
     example illustrates:
 
 > import Control.Monad.IO.Class (liftIO)
+> import Control.Monad.Trans.State.Strict
 > import Pipes
 > import Pipes.Parse
 > import qualified Pipes.Prelude as P
@@ -335,8 +335,6 @@ takeWhile predicate = loop
 {- $reexports
     @Control.Monad.Trans.Free@ re-exports 'FreeF', 'FreeT', and 'runFreeT'.
 
-    @Control.Monad.Trans.State.Strict@ re-exports 'StateT', 'runStateT',
+    @Control.Monad.Trans.State.STrict@ re-exports 'StateT', 'runStateT',
     'evalStateT', and 'execStateT'.
-
-    @Pipes.Lift@ re-exports 'runStateP', 'evalStateP', and 'execStateP'.
 -}
