@@ -116,7 +116,7 @@ import Pipes (Producer, Pipe, await, yield, next, (>->))
 import Pipes.Core (Producer')
 import Pipes.Lift (runStateP, execStateP)
 import qualified Pipes.Prelude as P
-import Prelude hiding (concat, takeWhile, take)
+import Prelude hiding (concat, takeWhile)
 
 {-| Split a 'Producer' into a `FreeT`-delimited stream of 'Producer's grouped by
     the supplied equality predicate
