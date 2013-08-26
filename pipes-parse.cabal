@@ -10,15 +10,17 @@ Maintainer: Gabriel439@gmail.com
 Bug-Reports: https://github.com/Gabriel439/Haskell-Pipes-Parse-Library/issues
 Synopsis: Parsing infrastructure for the pipes ecosystem
 Description: @pipes-parse@ builds upon the @pipes@ library to provide shared
-    streaming parsing utilities:
+    parsing idioms and utilities:
     .
-    * /Concise API/: Just use @draw@ and @unDraw@ or @input@
+    * /Perfect Streaming/: Use @FreeT@ to avoid collecting input elements
     .
-    * /Termination Safety/: Detect and recover from end of input
+    * /Concise Parsing API/: Just use @draw@ and @unDraw@ or @input@
     .
     * /Leftovers/: Save unused input for later consumption
     .
-    * /Lens Support/: Zoom in on subsets of a stream using isomorphisms
+    * /Connect and Resume/: Use @StateT@ to save unused input for later
+    .
+    * /Termination Safety/: Detect and recover from end of input
     .
     @Pipes.Parse@ contains the full documentation for this library.
 Category: Control, Pipes, Parsing

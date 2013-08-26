@@ -51,7 +51,12 @@ import Prelude hiding (concat, takeWhile)
 
 {- $splitters
     @pipes-parse@ uses 'FreeT' to sub-divide streams into groups without
-    collecting elements in memory:
+    collecting elements in memory.
+
+    Think of @(Producer a m ())@ as being analogous to @[a]@ and
+    @(FreeT (Producer a m) ())@ as being analogous to @[[a]]@.  'FreeT' in this
+    case behaves like a linked list of 'Producer's where you must drain each
+    'Producer' to completion before you can advance to the next 'Producer'.
 -}
 
 {-| Split a 'Producer' into a `FreeT`-delimited stream of 'Producer's grouped by
@@ -202,7 +207,6 @@ isEndOfInput = liftM isNothing peek
     example illustrates:
 
 > import Control.Monad.IO.Class (liftIO)
-> import Control.Monad.Trans.State.Strict
 > import Pipes
 > import Pipes.Parse
 > import qualified Pipes.Prelude as P
