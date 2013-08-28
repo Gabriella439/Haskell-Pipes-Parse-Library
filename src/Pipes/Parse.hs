@@ -44,7 +44,7 @@
     This then limits standard input to the first three consecutive groups of
     equal lines:
 
->>> run $ threeGroups Prelude.stdin >-> Prelude.stdout
+>>> runEffect $ threeGroups Prelude.stdin >-> Prelude.stdout
 Group1<Enter>
 Group1
 Group1<Enter>
@@ -284,11 +284,11 @@ isEndOfInput = liftM isNothing peek
 >
 > parser :: (Show a) => StateT (Producer a IO r) IO ()
 > parser = do
->     run $ input >-> P.take 2 >-> P.show >-> hoist liftIO P.stdout
+>     runEffect $ input >-> P.take 2 >-> P.show >-> hoist liftIO P.stdout
 >
 >     liftIO $ putStrLn "Intermission"
 >
->     run $ input >-> P.take 2 >-> P.show >-> hoist liftIO P.stdout
+>     runEffect $ input >-> P.take 2 >-> P.show >-> hoist liftIO P.stdout
 
     The second pipeline resumes where the first pipeline left off:
 

@@ -18,7 +18,7 @@ Then fire up `ghci`:
 ... and limit standard input to first three consecutive groups of equal lines:
 
     Prelude Pipes P P> let threeGroups = P.concat . P.takeFree 3 . P.groupBy (==)
-    Prelude Pipes P P> run $ threeGroups P.stdin >-> P.stdout
+    Prelude Pipes P P> runEffect $ threeGroups P.stdin >-> P.stdout
     Group1<Enter>
     Group1
     Group1<Enter>
