@@ -59,8 +59,9 @@ the primitives in this library and will probably not need to depend on
 
 ## Development Status
 
-`pipes-parse` is complete and if the API does not change by the end of 2013 then
-the library will be officially stabilized.
+`pipes-parse` is close to complete and will probably add a few more functions
+over the new few months.  If the API does not make any backwards incompatible
+changes by the end of 2013 then the library will be officially stabilized.
 
 ## Community Resources
 
