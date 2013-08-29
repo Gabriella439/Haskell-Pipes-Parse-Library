@@ -9,11 +9,11 @@
 
     The top half of this module provides the list-like approach.  The key idea
     is that:
-    
+
 > -- '~' means "is analogous to"
-> Producer a m ()               ~   [a]
+> Producer a m ()            ~   [a]
 >
-> FreeT (Producer a m ()) m ()  ~  [[a]]
+> FreeT (Producer a m) m ()  ~  [[a]]
 
     'FreeT' nests each subsequent 'Producer' within the return value of the
     previous 'Producer' so that you cannot access the next 'Producer' until you
@@ -22,13 +22,13 @@
     \"splitters\", \"transformations\" and \"joiners\":
 
 > -- A "splitter"
-> Producer a m ()              -> FreeT (Producer a m ()) m ()  ~   [a]  -> [[a]]
+> Producer a m ()           -> FreeT (Producer a m) m ()  ~   [a]  -> [[a]]
 >
 > -- A "transformation"
-> FreeT (Producer a m ()) m () -> FreeT (Producer a m ()) m ()  ~  [[a]] -> [[a]]
+> FreeT (Producer a m) m () -> FreeT (Producer a m) m ()  ~  [[a]] -> [[a]]
 >
 > -- A "joiner"
-> FreeT (Producer a m ()) m () -> Producer a m ()               ~  [[a]] ->  [a]
+> FreeT (Producer a m) m () -> Producer a m ()            ~  [[a]] ->  [a]
 
     For example, if you wanted to group standard input by equal lines and take
     the first three groups, you would write:
@@ -44,7 +44,7 @@
     This then limits standard input to the first three consecutive groups of
     equal lines:
 
->>> run $ threeGroups Prelude.stdin >-> Prelude.stdout
+>>> runEffect $ threeGroups Prelude.stdin >-> Prelude.stdout
 Group1<Enter>
 Group1
 Group1<Enter>
@@ -140,7 +140,7 @@ groupBy equal = loop
 {-| Split a 'Producer' into a `FreeT`-delimited stream of 'Producer's of the
     given chunk size
 -}
-chunksOf :: (Monad m) => Int -> Producer a m () -> FreeT (Producer a m) m () 
+chunksOf :: (Monad m) => Int -> Producer a m () -> FreeT (Producer a m) m ()
 chunksOf n = loop
   where
     loop p = do
@@ -284,11 +284,11 @@ isEndOfInput = liftM isNothing peek
 >
 > parser :: (Show a) => StateT (Producer a IO r) IO ()
 > parser = do
->     run $ input >-> P.take 2 >-> P.show >-> hoist liftIO P.stdout
+>     runEffect $ input >-> P.take 2 >-> P.show >-> hoist liftIO P.stdout
 >
 >     liftIO $ putStrLn "Intermission"
 >
->     run $ input >-> P.take 2 >-> P.show >-> hoist liftIO P.stdout
+>     runEffect $ input >-> P.take 2 >-> P.show >-> hoist liftIO P.stdout
 
     The second pipeline resumes where the first pipeline left off:
 
@@ -335,6 +335,6 @@ takeWhile predicate = loop
 {- $reexports
     @Control.Monad.Trans.Free@ re-exports 'FreeF', 'FreeT', and 'runFreeT'.
 
-    @Control.Monad.Trans.State.STrict@ re-exports 'StateT', 'runStateT',
+    @Control.Monad.Trans.State.Strict@ re-exports 'StateT', 'runStateT',
     'evalStateT', and 'execStateT'.
 -}
