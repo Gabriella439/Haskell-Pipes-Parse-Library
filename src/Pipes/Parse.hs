@@ -112,8 +112,7 @@ import qualified Control.Monad.Trans.State.Strict as S
 import Control.Monad.Trans.State.Strict (
     StateT(StateT, runStateT), evalStateT, execStateT )
 import Data.Maybe (isNothing)
-import Pipes (Producer, Pipe, await, yield, next, (>->))
-import Pipes.Core (Producer')
+import Pipes (Producer, Pipe, await, yield, next, (>->), Producer')
 import Pipes.Lift (runStateP, execStateP)
 import qualified Pipes.Prelude as P
 import Prelude hiding (concat, takeWhile)
