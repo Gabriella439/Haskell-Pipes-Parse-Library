@@ -122,7 +122,7 @@ import Prelude hiding (concat, takeWhile)
 -}
 groupBy
     :: (Monad m)
-    => (a -> a -> Bool) -> Producer a m () -> FreeT (Producer a m) m ()
+    => (a -> a -> Bool) -> Producer a m r -> FreeT (Producer a m) m r
 groupBy equal = loop
   where
     loop p = do
