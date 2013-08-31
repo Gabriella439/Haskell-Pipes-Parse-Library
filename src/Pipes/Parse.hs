@@ -181,7 +181,7 @@ concat = loop
 -}
 intercalate
     :: (Monad m)
-    => Producer a m () -> FreeT (Producer a m) m () -> Producer a m ()
+    => Producer a m () -> FreeT (Producer a m) m r -> Producer a m r
 intercalate sep = go0
   where
     go0 f = do
