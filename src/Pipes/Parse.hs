@@ -164,7 +164,7 @@ splitOn predicate = loop
 {-# INLINABLE splitOn #-}
 
 -- | Join a 'FreeT'-delimited stream of 'Producer's into a single 'Producer'
-concat :: (Monad m) => FreeT (Producer a m) m () -> Producer a m ()
+concat :: (Monad m) => FreeT (Producer a m) m r -> Producer a m r
 concat = loop
   where
     loop f = do
