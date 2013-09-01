@@ -1,4 +1,5 @@
-{-| Element-agnostic parsing utilities for @pipes@
+{-|
+    Element-agnostic parsing utilities for @pipes@
 
     @pipes-parse@ provides two ways to parse and transform streams in constant
     space:
@@ -104,7 +105,7 @@ module Pipes.Parse (
     module Control.Monad.Trans.State.Strict
     ) where
 
-import Control.Monad (liftM, unless)
+import Control.Monad (liftM)
 import qualified Control.Monad.Trans.Free as F
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Free (FreeF(Pure, Free), FreeT(FreeT, runFreeT))
@@ -113,7 +114,7 @@ import Control.Monad.Trans.State.Strict (
     StateT(StateT, runStateT), evalStateT, execStateT )
 import Data.Maybe (isNothing)
 import Pipes (Producer, Pipe, await, yield, next, (>->), Producer')
-import Pipes.Lift (runStateP, execStateP)
+import Pipes.Lift (execStateP)
 import qualified Pipes.Prelude as P
 import Prelude hiding (concat, takeWhile)
 
@@ -154,14 +155,15 @@ chunksOf n = loop
     by elements that satisfy the given predicate
 -}
 splitOn
-    :: (Monad m) => (a -> Bool) -> Producer a m () -> FreeT (Producer a m) m ()
+    :: (Monad m) => (a -> Bool) -> Producer a m r -> FreeT (Producer a m) m r
 splitOn predicate = loop
   where
     loop p = do
-        (stop, p') <- F.liftF $ runStateP p $ do
-            input >-> takeWhile (not . predicate)
-            lift $ liftM isNothing draw
-        unless stop (loop p')
+        p1 <- F.liftF $ execStateP p $ input >-> takeWhile (not . predicate)
+        x <- lift (next p1)
+        case x of
+            Left r        -> return r
+            Right (a, p2) -> loop (yield a >> p2)
 {-# INLINABLE splitOn #-}
 
 -- | Join a 'FreeT'-delimited stream of 'Producer's into a single 'Producer'
