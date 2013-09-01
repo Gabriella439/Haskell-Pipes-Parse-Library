@@ -139,14 +139,15 @@ groupBy equal = loop
 {-| Split a 'Producer' into a `FreeT`-delimited stream of 'Producer's of the
     given chunk size
 -}
-chunksOf :: (Monad m) => Int -> Producer a m () -> FreeT (Producer a m) m ()
+chunksOf :: (Monad m) => Int -> Producer a m r -> FreeT (Producer a m) m r
 chunksOf n = loop
   where
     loop p = do
-        (eof, p') <- F.liftF $ runStateP p $ do
-            input >-> P.take n
-            lift isEndOfInput
-        unless eof (loop p')
+        p1 <- F.liftF $ execStateP p $ input >-> P.take n
+        x <- lift (next p1)
+        case x of
+            Left r        -> return r
+            Right (a, p2) -> loop (yield a >> p2)
 {-# INLINABLE chunksOf #-}
 
 {-| Split a 'Producer' into a `FreeT`-delimited stream of 'Producer's separated
