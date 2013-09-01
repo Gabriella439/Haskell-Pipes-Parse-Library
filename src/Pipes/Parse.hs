@@ -205,7 +205,7 @@ intercalate sep = go0
 {-# INLINABLE intercalate #-}
 
 -- | @(take n)@ only keeps the first @n@ functor layers of a 'FreeT'
-takeFree :: (Functor f, Monad m) => Int -> FreeT f m r -> FreeT f m ()
+takeFree :: (Functor f, Monad m) => Int -> FreeT f m () -> FreeT f m ()
 takeFree = go
   where
     go n f =
@@ -213,8 +213,8 @@ takeFree = go
         then FreeT $ do
             x <- runFreeT f
             case x of
-                Pure _ -> return (Pure ())
-                Free w -> return (Free (fmap (go $! n - 1) w))
+                Pure () -> return (Pure ())
+                Free w  -> return (Free (fmap (go $! n - 1) w))
         else return ()
 {-# INLINABLE takeFree #-}
 
