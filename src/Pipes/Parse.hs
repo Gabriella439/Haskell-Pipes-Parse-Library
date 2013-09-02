@@ -1,4 +1,5 @@
-{-| Element-agnostic parsing utilities for @pipes@
+{-|
+    Element-agnostic parsing utilities for @pipes@
 
     @pipes-parse@ provides two ways to parse and transform streams in constant
     space:
@@ -104,7 +105,7 @@ module Pipes.Parse (
     module Control.Monad.Trans.State.Strict
     ) where
 
-import Control.Monad (liftM, unless)
+import Control.Monad (liftM)
 import qualified Control.Monad.Trans.Free as F
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Free (FreeF(Pure, Free), FreeT(FreeT, runFreeT))
@@ -113,7 +114,7 @@ import Control.Monad.Trans.State.Strict (
     StateT(StateT, runStateT), evalStateT, execStateT )
 import Data.Maybe (isNothing)
 import Pipes (Producer, Pipe, await, yield, next, (>->), Producer')
-import Pipes.Lift (runStateP, execStateP)
+import Pipes.Lift (execStateP)
 import qualified Pipes.Prelude as P
 import Prelude hiding (concat, takeWhile)
 
@@ -122,7 +123,7 @@ import Prelude hiding (concat, takeWhile)
 -}
 groupBy
     :: (Monad m)
-    => (a -> a -> Bool) -> Producer a m () -> FreeT (Producer a m) m ()
+    => (a -> a -> Bool) -> Producer a m r -> FreeT (Producer a m) m r
 groupBy equal = loop
   where
     loop p = do
@@ -139,32 +140,34 @@ groupBy equal = loop
 {-| Split a 'Producer' into a `FreeT`-delimited stream of 'Producer's of the
     given chunk size
 -}
-chunksOf :: (Monad m) => Int -> Producer a m () -> FreeT (Producer a m) m ()
+chunksOf :: (Monad m) => Int -> Producer a m r -> FreeT (Producer a m) m r
 chunksOf n = loop
   where
     loop p = do
-        (eof, p') <- F.liftF $ runStateP p $ do
-            input >-> P.take n
-            lift isEndOfInput
-        unless eof (loop p')
+        p1 <- F.liftF $ execStateP p $ input >-> P.take n
+        x <- lift (next p1)
+        case x of
+            Left r        -> return r
+            Right (a, p2) -> loop (yield a >> p2)
 {-# INLINABLE chunksOf #-}
 
 {-| Split a 'Producer' into a `FreeT`-delimited stream of 'Producer's separated
     by elements that satisfy the given predicate
 -}
 splitOn
-    :: (Monad m) => (a -> Bool) -> Producer a m () -> FreeT (Producer a m) m ()
+    :: (Monad m) => (a -> Bool) -> Producer a m r -> FreeT (Producer a m) m r
 splitOn predicate = loop
   where
     loop p = do
-        (stop, p') <- F.liftF $ runStateP p $ do
-            input >-> takeWhile (not . predicate)
-            lift $ liftM isNothing draw
-        unless stop (loop p')
+        p1 <- F.liftF $ execStateP p $ input >-> takeWhile (not . predicate)
+        x <- lift (next p1)
+        case x of
+            Left r        -> return r
+            Right (a, p2) -> loop (yield a >> p2)
 {-# INLINABLE splitOn #-}
 
 -- | Join a 'FreeT'-delimited stream of 'Producer's into a single 'Producer'
-concat :: (Monad m) => FreeT (Producer a m) m () -> Producer a m ()
+concat :: (Monad m) => FreeT (Producer a m) m r -> Producer a m r
 concat = loop
   where
     loop f = do
@@ -181,7 +184,7 @@ concat = loop
 -}
 intercalate
     :: (Monad m)
-    => Producer a m () -> FreeT (Producer a m) m () -> Producer a m ()
+    => Producer a m () -> FreeT (Producer a m) m r -> Producer a m r
 intercalate sep = go0
   where
     go0 f = do
@@ -202,7 +205,7 @@ intercalate sep = go0
 {-# INLINABLE intercalate #-}
 
 -- | @(take n)@ only keeps the first @n@ functor layers of a 'FreeT'
-takeFree :: (Functor f, Monad m) => Int -> FreeT f m r -> FreeT f m ()
+takeFree :: (Functor f, Monad m) => Int -> FreeT f m () -> FreeT f m ()
 takeFree = go
   where
     go n f =
@@ -210,8 +213,8 @@ takeFree = go
         then FreeT $ do
             x <- runFreeT f
             case x of
-                Pure _ -> return (Pure ())
-                Free w -> return (Free (fmap (go $! n - 1) w))
+                Pure () -> return (Pure ())
+                Free w  -> return (Free (fmap (go $! n - 1) w))
         else return ()
 {-# INLINABLE takeFree #-}
 
