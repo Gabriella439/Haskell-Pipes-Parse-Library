@@ -105,16 +105,15 @@ module Pipes.Parse (
     module Control.Monad.Trans.State.Strict
     ) where
 
-import Control.Monad (liftM)
+import Control.Applicative ((<$>), (<$))
 import qualified Control.Monad.Trans.Free as F
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Free (FreeF(Pure, Free), FreeT(FreeT, runFreeT))
 import qualified Control.Monad.Trans.State.Strict as S
 import Control.Monad.Trans.State.Strict (
     StateT(StateT, runStateT), evalStateT, execStateT )
-import Data.Maybe (isNothing)
 import Pipes (Producer, Pipe, await, yield, next, (>->), Producer')
-import Pipes.Lift (execStateP)
+import Pipes.Lift (runStateP)
 import qualified Pipes.Prelude as P
 import Prelude hiding (concat, takeWhile)
 
@@ -127,14 +126,16 @@ groupBy
 groupBy equal = loop
   where
     loop p = do
-        x <- lift (next p)
-        case x of
-            Left  r       -> return r
-            Right (a, p1) -> do
-                p2 <- F.liftF $ execStateP p1 $ do
+        (x, p') <- F.liftF $ runStateP p $ do
+            x <- lift draw
+            case x of
+                Left  r -> return (Just r)
+                Right a -> do
                     yield a
-                    input >-> takeWhile (equal a)
-                loop p2
+                    (Just <$> input) >-> (Nothing <$ takeWhile (equal a))
+        case x of
+            Just r  -> return r
+            Nothing -> loop p'
 {-# INLINABLE groupBy #-}
 
 {-| Split a 'Producer' into a `FreeT`-delimited stream of 'Producer's of the
@@ -144,11 +145,11 @@ chunksOf :: (Monad m) => Int -> Producer a m r -> FreeT (Producer a m) m r
 chunksOf n = loop
   where
     loop p = do
-        p1 <- F.liftF $ execStateP p $ input >-> P.take n
-        x <- lift (next p1)
+        (x, p') <- F.liftF $ runStateP p $
+            (Just <$> input) >-> (Nothing <$ P.take n)
         case x of
-            Left r        -> return r
-            Right (a, p2) -> loop (yield a >> p2)
+            Just r  -> return r
+            Nothing -> loop p'
 {-# INLINABLE chunksOf #-}
 
 {-| Split a 'Producer' into a `FreeT`-delimited stream of 'Producer's separated
@@ -159,11 +160,11 @@ splitOn
 splitOn predicate = loop
   where
     loop p = do
-        p1 <- F.liftF $ execStateP p $ input >-> takeWhile (not . predicate)
-        x <- lift (next p1)
+        (x, p') <- F.liftF $ runStateP p $
+            (Just <$> input) >-> (Nothing <$ takeWhile (not . predicate))
         case x of
-            Left r        -> return r
-            Right (a, p2) -> loop (yield a >> p2)
+            Just r  -> return r
+            Nothing -> loop p'
 {-# INLINABLE splitOn #-}
 
 -- | Join a 'FreeT'-delimited stream of 'Producer's into a single 'Producer'
@@ -223,20 +224,20 @@ takeFree = go
     a 'StateT' layer.
 -}
 
-{-| Draw one element from the underlying 'Producer', returning 'Nothing' if the
+{-| Draw one element from the underlying 'Producer', returning 'Left' if the
     'Producer' is empty
 -}
-draw :: (Monad m) => StateT (Producer a m r) m (Maybe a)
+draw :: (Monad m) => StateT (Producer a m r) m (Either r a)
 draw = do
     p <- S.get
     x <- lift (next p)
     case x of
         Left   r      -> do
             S.put (return r)
-            return Nothing
+            return (Left r)
         Right (a, p') -> do
             S.put p'
-            return (Just a)
+            return (Right a)
 {-# INLINABLE draw #-}
 
 -- | Push back an element onto the underlying 'Producer'
@@ -248,27 +249,31 @@ unDraw a = S.modify (yield a >>)
     element back so that it is available for the next 'draw' command.
 
 > peek = do
->     ma <- draw
->     case ma of
->         Nothing -> return ()
->         Just a  -> unDraw a
->     return ma
+>     x <- draw
+>     case x of
+>         Left  _ -> return ()
+>         Right a -> unDraw a
+>     return x
 -}
-peek :: (Monad m) => StateT (Producer a m r) m (Maybe a)
+peek :: (Monad m) => StateT (Producer a m r) m (Either r a)
 peek = do
-    ma <- draw
-    case ma of
-        Nothing -> return ()
-        Just a  -> unDraw a
-    return ma
+    x <- draw
+    case x of
+        Left  _ -> return ()
+        Right a -> unDraw a
+    return x
 {-# INLINABLE peek #-}
 
 {-| Check if the underlying 'Producer' is empty
 
-> isEndOfInput = liftM isNothing peek
+> isEndOfInput = liftM isLeft peek
 -}
 isEndOfInput :: (Monad m) => StateT (Producer a m r) m Bool
-isEndOfInput = liftM isNothing peek
+isEndOfInput = do
+    x <- peek
+    return (case x of
+        Left  _ -> True
+        Right _ -> False )
 {-# INLINABLE isEndOfInput #-}
 
 {- $highlevel
@@ -306,14 +311,14 @@ Intermission
 -}
 
 -- | Stream from the underlying 'Producer'
-input :: (Monad m) => Producer' a (StateT (Producer a m r) m) ()
+input :: (Monad m) => Producer' a (StateT (Producer a m r) m) r
 input = loop
   where
     loop = do
-        ma <- lift draw
-        case ma of
-            Nothing -> return ()
-            Just a  -> do
+        x <- lift draw
+        case x of
+            Left  r -> return r
+            Right a -> do
                 yield a
                 loop
 {-# INLINABLE input #-}
