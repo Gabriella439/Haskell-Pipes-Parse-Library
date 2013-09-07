@@ -288,13 +288,13 @@ isEndOfInput = do
 > import Pipes.Parse
 > import qualified Pipes.Prelude as P
 >
-> parser :: (Show a) => StateT (Producer a IO r) IO ()
+> parser :: (Show a) => StateT (Producer a IO ()) IO ()
 > parser = do
->     runEffect $ input >-> P.take 2 >-> P.show >-> hoist liftIO P.stdoutLn
+>     runEffect $ input >-> P.take 2 >-> P.show >-> P.stdoutLn
 >
 >     liftIO $ putStrLn "Intermission"
 >
->     runEffect $ input >-> P.take 2 >-> P.show >-> hoist liftIO P.stdoutLn
+>     runEffect $ input >-> P.take 2 >-> P.show >-> P.stdoutLn
 
     The second pipeline resumes where the first pipeline left off:
 
