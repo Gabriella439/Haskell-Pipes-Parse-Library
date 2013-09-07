@@ -283,7 +283,6 @@ isEndOfInput = do
     'Producer' because any unused input is saved for later, as the following
     example illustrates:
 
-> import Control.Monad.IO.Class (liftIO)
 > import Control.Monad.Trans.State.Strict
 > import Pipes
 > import Pipes.Parse
