@@ -309,7 +309,11 @@ Intermission
     the source code for the above splitters.
 -}
 
--- | Stream from the underlying 'Producer'
+{-| Stream from the underlying 'Producer'
+
+    'input' terminates if the 'Producer' is empty, returning the final return
+    value of the 'Producer'.
+-}
 input :: (Monad m) => Producer' a (StateT (Producer a m r) m) r
 input = loop
   where
