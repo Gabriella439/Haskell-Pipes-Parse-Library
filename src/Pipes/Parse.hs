@@ -80,6 +80,7 @@ module Pipes.Parse (
 
     -- * Transformations
     takeFree,
+    dropFree,
 
     -- * Joiners
     concat,
@@ -112,7 +113,8 @@ import Control.Monad.Trans.Free (FreeF(Pure, Free), FreeT(FreeT, runFreeT))
 import qualified Control.Monad.Trans.State.Strict as S
 import Control.Monad.Trans.State.Strict (
     StateT(StateT, runStateT), evalStateT, execStateT )
-import Pipes (Producer, Pipe, await, yield, next, (>->), Producer')
+import Pipes (
+    Producer, Pipe, await, yield, next, (>->), Producer', runEffect, for, discard)
 import Pipes.Lift (runStateP)
 import qualified Pipes.Prelude as P
 import Prelude hiding (concat, takeWhile)
@@ -218,6 +220,25 @@ takeFree = go
                 Free w  -> return (Free (fmap (go $! n - 1) w))
         else return ()
 {-# INLINABLE takeFree #-}
+
+{-| Analogue of @(drop n)@. Peels off the first @n@ layers of a 'FreeT'.
+
+Use carefully: the peeling off is not free, we will run the first @n@
+layers, just discard everything they produce.
+-}
+dropFree :: (Monad m) => Int -> FreeT (Producer a m) m r -> FreeT (Producer a m) m r
+dropFree = go
+  where
+    project p = runEffect $ for p discard
+
+    go n ft | n <= 0 = ft
+            | otherwise = FreeT $ do
+              ff <- runFreeT ft
+              case ff of
+                Pure _ -> return ff
+                Free f -> do ft' <- project f
+                             runFreeT $ go (n-1) ft'
+{-# INLINABLE dropFree #-}
 
 {- $lowlevel
     @pipes-parse@ handles end-of-input and pushback by storing a 'Producer' in
