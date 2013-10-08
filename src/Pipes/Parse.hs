@@ -207,7 +207,7 @@ intercalate sep = go0
                 go1 f'
 {-# INLINABLE intercalate #-}
 
--- | @(take n)@ only keeps the first @n@ functor layers of a 'FreeT'
+-- | @(takeFree n)@ only keeps the first @n@ functor layers of a 'FreeT'
 takeFree :: (Functor f, Monad m) => Int -> FreeT f m () -> FreeT f m ()
 takeFree = go
   where
