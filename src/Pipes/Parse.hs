@@ -85,6 +85,8 @@ module Pipes.Parse (
     -- * Joiners
     concat,
     intercalate,
+    foldlFree,
+    foldMFree,
 
     -- * Low-level Parsers
     -- $lowlevel
@@ -179,7 +181,7 @@ concat = loop
             Pure r -> return r
             Free p -> do
                 f' <- p
-                concat f'
+                loop f'
 {-# INLINABLE concat #-}
 
 {-| Join a 'FreeT'-delimited stream of 'Producer's into a single 'Producer' by
@@ -206,6 +208,59 @@ intercalate sep = go0
                 f' <- p
                 go1 f'
 {-# INLINABLE intercalate #-}
+
+{-| Strict left fold of the 'FreeT' layers.
+
+Converts a 'FreeT' delimited producer into a simple 'Producer' by
+folding all the elements /within/ the 'FreeT' layers.
+-}
+foldlFree
+    :: (Monad m)
+    => (b -> a -> b) -> b
+    -> FreeT (Producer a m) m r
+    -> Producer b m r
+foldlFree f b0 = go
+  where
+    go (FreeT m) = do
+        x <- lift m
+        case x of
+            Pure r -> return r
+            Free p -> go2 b0 p
+
+    go2 b p = do
+        x <- lift $ next p
+        case x of
+            Left fm -> yield b >> go fm
+            Right (a, p') -> (go2 $! f b a) p'
+{-# INLINABLE foldlFree #-}
+
+{-| Monadic fold of the 'FreeT' layers.
+
+Converts a 'FreeT' delimited producer into a simple 'Producer' by
+folding all the elements /within/ the 'FreeT' layers. The folding
+function can have side-effects and even 'yield' on its own.
+-}
+foldMFree
+    :: (Monad m)
+    => (b -> a -> Producer b m b) -> b
+    -> FreeT (Producer a m) m r
+    -> Producer b m r
+foldMFree f b0 = go
+  where
+    go (FreeT m) = do
+        x <- lift m
+        case x of
+            Pure r -> return r
+            Free p -> go2 b0 p
+
+    go2 b p = do
+        x <- lift $ next p
+        case x of
+            Left fm -> yield b >> go fm
+            Right (a, p') -> do
+                b' <- f b a
+                go2 b' p'
+{-# INLINABLE foldMFree #-}
 
 -- | @(takeFree n)@ only keeps the first @n@ functor layers of a 'FreeT'
 takeFree :: (Functor f, Monad m) => Int -> FreeT f m () -> FreeT f m ()
