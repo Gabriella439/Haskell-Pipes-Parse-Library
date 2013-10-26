@@ -8,8 +8,8 @@
 
     * The monadic approach, using parser combinators
 
-    The top half of this module provides the list-like approach.  The key idea
-    is that:
+    The top half of this module provides the list-like approach, which is easier
+    to use, but less powerful.  The key idea is that:
 
 > -- '~' means "is analogous to"
 > Producer a m ()            ~   [a]
@@ -64,10 +64,47 @@ Group4<Enter>
     `Producer` without concatenating elements together, preserving the laziness
     of the underlying 'Producer'.
 
-    The bottom half of this module contains the lower-level monadic parsing
-    primitives.  These are more useful for `pipes` implementers, particularly
-    for building splitters.  I recommend that application developers use the
-    list-like style whenever possible.
+    The bottom half of this module lets you implement your own list-like
+    transformations using monadic parsers.
+
+    For example, if you wanted to repeatedly sum every 3 elements and yield the
+    result, you would write:
+
+> import Control.Monad (unless)
+> import Pipes
+> import qualified Pipes.Prelude as P
+> import Pipes.Parse
+>
+> sum3 :: (Monad m, Num a) => Producer a (StateT (Producer a m ()) m) ()
+> sum3 = do
+>     eof <- lift isEndOfInput
+>     unless eof $ do
+>         n <- lift $ P.sum (input >-> P.take 3)
+>         yield n
+>         sum3
+
+    When you are done building the parser, you convert your parser to a
+    list-like function using `evalStateP`:
+
+> import Pipes.Lift (evalStateP)
+>
+> -- sum3'  ~  (Num a) => [a] -> [a]
+>
+> sum3' :: (Monad m, Num a) => Producer a m () -> Producer a m ()
+> sum3' p = evalStateP p sum3
+
+    ... then apply it to the `Producer` you want to transform:
+
+>>> runEffect $ sum3' (P.readLn >-> P.takeWhile (/= 0)) >-> P.print
+1<Enter>
+4<Enter>
+5<Enter>
+10
+2<Enter>
+0<Enter>
+2
+>>>
+
 -}
 
 {-# LANGUAGE RankNTypes #-}
