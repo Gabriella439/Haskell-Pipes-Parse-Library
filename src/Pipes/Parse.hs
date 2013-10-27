@@ -197,8 +197,9 @@ splitOn
 splitOn predicate = loop
   where
     loop p = do
-        (x, p') <- F.liftF $ runStateP p $
+        (x, p') <- F.liftF $ runStateP p $ do
             (Just <$> input) >-> (Nothing <$ takeWhile (not . predicate))
+            (Just <$> input) >-> (Nothing <$ for (P.take 1) discard)
         case x of
             Just r  -> return r
             Nothing -> loop p'
