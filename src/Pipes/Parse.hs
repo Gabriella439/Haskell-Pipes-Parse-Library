@@ -323,23 +323,24 @@ takeFree = go
         else return ()
 {-# INLINABLE takeFree #-}
 
-{-| Analogue of @(drop n)@. Peels off the first @n@ layers of a 'FreeT'.
+{-| @(dropFree n)@ peels off the first @n@ layers of a 'FreeT'
 
-Use carefully: the peeling off is not free, we will run the first @n@
-layers, just discard everything they produce.
+    Use carefully: the peeling off is not free.   This runs the first @n@
+    layers, just discard everything they produce.
 -}
-dropFree :: (Monad m) => Int -> FreeT (Producer a m) m r -> FreeT (Producer a m) m r
+dropFree
+    :: (Monad m) => Int -> FreeT (Producer a m) m r -> FreeT (Producer a m) m r
 dropFree = go
   where
-    project p = runEffect $ for p discard
-
-    go n ft | n <= 0 = ft
-            | otherwise = FreeT $ do
-              ff <- runFreeT ft
-              case ff of
+    go n ft
+        | n <= 0 = ft
+        | otherwise = FreeT $ do
+            ff <- runFreeT ft
+            case ff of
                 Pure _ -> return ff
-                Free f -> do ft' <- project f
-                             runFreeT $ go (n-1) ft'
+                Free f -> do
+                    ft' <- runEffect $ for f discard
+                    runFreeT $ go (n-1) ft'
 {-# INLINABLE dropFree #-}
 
 {- $lowlevel
