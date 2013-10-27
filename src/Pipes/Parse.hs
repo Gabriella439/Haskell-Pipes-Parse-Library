@@ -261,7 +261,7 @@ takeFree = go
 {-| @(dropFree n)@ peels off the first @n@ layers of a 'FreeT'
 
     Use carefully: the peeling off is not free.   This runs the first @n@
-    layers, just discard everything they produce.
+    layers, just discarding everything they produce.
 -}
 dropFree
     :: (Monad m) => Int -> FreeT (Producer a m) m r -> FreeT (Producer a m) m r
