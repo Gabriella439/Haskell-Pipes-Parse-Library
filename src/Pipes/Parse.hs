@@ -122,7 +122,7 @@ module Pipes.Parse (
     -- * Joiners
     concat,
     intercalate,
-    foldlFree,
+    foldFree,
     foldMFree,
 
     -- * Low-level Parsers
@@ -246,57 +246,67 @@ intercalate sep = go0
                 go1 f'
 {-# INLINABLE intercalate #-}
 
-{-| Strict left fold of the 'FreeT' layers.
+{-| Strict fold of each 'Producer' layer of a 'FreeT'
 
-Converts a 'FreeT' delimited producer into a simple 'Producer' by
-folding all the elements /within/ the 'FreeT' layers.
+    The accumulator is not shared between 'Producer' layers.  Each layer is
+    folded using a fresh initial state.
 -}
-foldlFree
+foldFree
     :: (Monad m)
-    => (b -> a -> b) -> b
+    => (x -> a -> x)
+    -> x
+    -> (x -> b)
     -> FreeT (Producer a m) m r
     -> Producer b m r
-foldlFree f b0 = go
+foldFree step begin done = go0
   where
-    go (FreeT m) = do
-        x <- lift m
-        case x of
+    go0 (FreeT m) = do
+        y <- lift m
+        case y of
             Pure r -> return r
-            Free p -> go2 b0 p
+            Free p -> go1 p begin
 
-    go2 b p = do
-        x <- lift $ next p
-        case x of
-            Left fm -> yield b >> go fm
-            Right (a, p') -> (go2 $! f b a) p'
-{-# INLINABLE foldlFree #-}
+    go1 p x = do
+        y <- lift (next p)
+        case y of
+            Left   fm     -> do
+                yield (done x)
+                go0 fm
+            Right (a, p') -> go1 p' $! step x a
+{-# INLINABLE foldFree #-}
 
-{-| Monadic fold of the 'FreeT' layers.
+{-| Strict, monadic fold of each 'Producer' layer of a 'FreeT'
 
-Converts a 'FreeT' delimited producer into a simple 'Producer' by
-folding all the elements /within/ the 'FreeT' layers. The folding
-function can have side-effects and even 'yield' on its own.
+    The accumulator is not shared between 'Producer' layers.  Each layer is
+    folded using a fresh initial state.
 -}
 foldMFree
     :: (Monad m)
-    => (b -> a -> Producer b m b) -> b
+    => (x -> a -> m x)
+    -> m x
+    -> (x -> m b)
     -> FreeT (Producer a m) m r
     -> Producer b m r
-foldMFree f b0 = go
+foldMFree step begin done = go0
   where
-    go (FreeT m) = do
-        x <- lift m
-        case x of
+    go0 (FreeT m) = do
+        y <- lift m
+        case y of
             Pure r -> return r
-            Free p -> go2 b0 p
+            Free p -> do
+                x <- lift begin
+                go1 p x
 
-    go2 b p = do
-        x <- lift $ next p
-        case x of
-            Left fm -> yield b >> go fm
+    go1 p x = do
+        y <- lift (next p)
+        case y of
+            Left fm -> do
+                b <- lift (done x)
+                yield b
+                go0 fm
             Right (a, p') -> do
-                b' <- f b a
-                go2 b' p'
+                x' <- lift (step x a)
+                go1 p' $! x'
 {-# INLINABLE foldMFree #-}
 
 -- | @(takeFree n)@ only keeps the first @n@ functor layers of a 'FreeT'
