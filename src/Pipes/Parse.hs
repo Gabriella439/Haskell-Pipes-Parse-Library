@@ -145,13 +145,11 @@ module Pipes.Parse (
 
 import Control.Applicative ((<$>), (<$))
 import qualified Control.Monad.Trans.Free as F
-import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Free (FreeF(Pure, Free), FreeT(FreeT, runFreeT))
 import qualified Control.Monad.Trans.State.Strict as S
 import Control.Monad.Trans.State.Strict (
     StateT(StateT, runStateT), evalStateT, execStateT )
-import Pipes (
-    Producer, Pipe, await, yield, next, (>->), Producer', runEffect, for, discard)
+import Pipes
 import Pipes.Lift (runStateP)
 import qualified Pipes.Prelude as P
 import Prelude hiding (concat, takeWhile)
