@@ -122,8 +122,6 @@ module Pipes.Parse (
     -- * Joiners
     concat,
     intercalate,
-    foldFree,
-    foldMFree,
 
     -- * Low-level Parsers
     -- $lowlevel
@@ -245,69 +243,6 @@ intercalate sep = go0
                 f' <- p
                 go1 f'
 {-# INLINABLE intercalate #-}
-
-{-| Strict fold of each 'Producer' layer of a 'FreeT'
-
-    The accumulator is not shared between 'Producer' layers.  Each layer is
-    folded using a fresh initial state.
--}
-foldFree
-    :: (Monad m)
-    => (x -> a -> x)
-    -> x
-    -> (x -> b)
-    -> FreeT (Producer a m) m r
-    -> Producer b m r
-foldFree step begin done = go0
-  where
-    go0 (FreeT m) = do
-        y <- lift m
-        case y of
-            Pure r -> return r
-            Free p -> go1 p begin
-
-    go1 p x = do
-        y <- lift (next p)
-        case y of
-            Left   fm     -> do
-                yield (done x)
-                go0 fm
-            Right (a, p') -> go1 p' $! step x a
-{-# INLINABLE foldFree #-}
-
-{-| Strict, monadic fold of each 'Producer' layer of a 'FreeT'
-
-    The accumulator is not shared between 'Producer' layers.  Each layer is
-    folded using a fresh initial state.
--}
-foldMFree
-    :: (Monad m)
-    => (x -> a -> m x)
-    -> m x
-    -> (x -> m b)
-    -> FreeT (Producer a m) m r
-    -> Producer b m r
-foldMFree step begin done = go0
-  where
-    go0 (FreeT m) = do
-        y <- lift m
-        case y of
-            Pure r -> return r
-            Free p -> do
-                x <- lift begin
-                go1 p x
-
-    go1 p x = do
-        y <- lift (next p)
-        case y of
-            Left fm -> do
-                b <- lift (done x)
-                yield b
-                go0 fm
-            Right (a, p') -> do
-                x' <- lift (step x a)
-                go1 p' $! x'
-{-# INLINABLE foldMFree #-}
 
 -- | @(takeFree n)@ only keeps the first @n@ functor layers of a 'FreeT'
 takeFree :: (Functor f, Monad m) => Int -> FreeT f m () -> FreeT f m ()
