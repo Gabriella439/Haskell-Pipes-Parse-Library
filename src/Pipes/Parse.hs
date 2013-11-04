@@ -144,6 +144,7 @@ module Pipes.Parse (
     ) where
 
 import Control.Applicative ((<$>), (<$))
+import Control.Monad (void)
 import qualified Control.Monad.Trans.Free as F
 import Control.Monad.Trans.Free (FreeF(Pure, Free), FreeT(FreeT, runFreeT))
 import qualified Control.Monad.Trans.State.Strict as S
@@ -194,14 +195,15 @@ chunksOf n = loop
 -}
 splitOn
     :: (Monad m) => (a -> Bool) -> Producer a m r -> FreeT (Producer a m) m r
-splitOn predicate = loop
+splitOn predicate = go
   where
-    loop p = do
-        (x, p') <- F.liftF $ runStateP p $
-            (Just <$> input) >-> (Nothing <$ takeWhile (not . predicate))
+    go p = do
+        (x, p') <- F.liftF $ runStateP p $ do
+            void input >-> takeWhile (not . predicate)
+            lift draw
         case x of
-            Just r  -> return r
-            Nothing -> loop p'
+            Left  r -> return r
+            Right _ -> go p'
 {-# INLINABLE splitOn #-}
 
 -- | Join a 'FreeT'-delimited stream of 'Producer's into a single 'Producer'
