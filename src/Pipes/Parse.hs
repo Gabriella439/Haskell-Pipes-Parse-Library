@@ -147,7 +147,8 @@ module Pipes.Parse (
 import Control.Applicative ((<$>), (<$))
 import Control.Monad (void)
 import qualified Control.Monad.Trans.Free as F
-import Control.Monad.Trans.Free (FreeF(Pure, Free), FreeT(FreeT, runFreeT))
+import Control.Monad.Trans.Free (
+    FreeF(Pure, Free), FreeT(FreeT, runFreeT), transFreeT )
 import qualified Control.Monad.Trans.State.Strict as S
 import Control.Monad.Trans.State.Strict (
     StateT(StateT, runStateT), evalStateT, execStateT )
@@ -429,7 +430,8 @@ takeWhile predicate = loop
 {-# INLINABLE takeWhile #-}
 
 {- $reexports
-    @Control.Monad.Trans.Free@ re-exports 'FreeF', 'FreeT', and 'runFreeT'.
+    @Control.Monad.Trans.Free@ re-exports 'FreeF', 'FreeT', 'runFreeT', and
+    'transFreeT'.
 
     @Control.Monad.Trans.State.Strict@ re-exports 'StateT', 'runStateT',
     'evalStateT', and 'execStateT'.
