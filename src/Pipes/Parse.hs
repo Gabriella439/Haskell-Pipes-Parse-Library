@@ -117,6 +117,7 @@ module Pipes.Parse (
 
     -- * Transformations
     takeFree,
+    takeProducers,
     dropFree,
 
     -- * Joiners
@@ -257,6 +258,32 @@ takeFree = go
                 Free w  -> return (Free (fmap (go $! n - 1) w))
         else return ()
 {-# INLINABLE takeFree #-}
+
+{-| @(takeProducers n)@ only keeps the first @n@ 'Producer's of a 'FreeT'
+
+    'takeFree'' differs from 'takeFree' by draining unused 'Producer's in order
+    to preserve the return value.
+-}
+takeProducers
+    :: (Monad m) => Int -> FreeT (Producer a m) m r -> FreeT (Producer a m) m r
+takeProducers = go0
+  where
+    go0 n f = FreeT $
+        if (n > 0)
+        then do
+            x <- runFreeT f
+            case x of
+                Pure r -> return (Pure r)
+                Free p -> return (Free (fmap (go0 $! n - 1) p))
+        else go1 f
+    go1 f = do
+        x <- runFreeT f
+        case x of
+            Pure r -> return (Pure r)
+            Free p -> do
+                f' <- runEffect (for p discard)
+                go1 f'
+{-# INLINABLE takeProducers #-}
 
 {-| @(dropFree n)@ peels off the first @n@ layers of a 'FreeT'
 
