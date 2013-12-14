@@ -110,10 +110,12 @@ Group4<Enter>
 {-# LANGUAGE RankNTypes #-}
 
 module Pipes.Parse (
-    -- * Splitters
+    -- * Isomorphisms
+    span,
+    splitAt,
     groupBy,
+    group,
     chunksOf,
-    splitOn,
 
     -- * Transformations
     takeFree,
@@ -124,101 +126,173 @@ module Pipes.Parse (
     concat,
     intercalate,
 
-    -- * Low-level Parsers
+    -- * Parsers
     -- $lowlevel
     draw,
+    drawAll,
     unDraw,
     peek,
     isEndOfInput,
 
-    -- * High-level Parsers
-    -- $highlevel
-    input,
-
-    -- * Utilities
-    takeWhile,
-
     -- * Re-exports
     -- $reexports
+    module Lens.Family,
+    module Lens.Family.State.Strict,
     module Control.Monad.Trans.Free,
     module Control.Monad.Trans.State.Strict
     ) where
 
-import Control.Applicative ((<$>), (<$))
-import Control.Monad (void)
-import qualified Control.Monad.Trans.Free as F
+import Control.Monad (join)
 import Control.Monad.Trans.Free (
     FreeF(Pure, Free), FreeT(FreeT, runFreeT), transFreeT )
 import qualified Control.Monad.Trans.State.Strict as S
 import Control.Monad.Trans.State.Strict (
     StateT(StateT, runStateT), evalStateT, execStateT )
+import Lens.Family ((^.), over)
+import Lens.Family.State.Strict (zoom)
 import Pipes
-import Pipes.Lift (runStateP)
-import qualified Pipes.Prelude as P
-import Prelude hiding (concat, takeWhile)
+import Data.Profunctor (Profunctor, dimap)
+import Prelude hiding (concat, takeWhile, splitAt, span)
 
-{-| Split a 'Producer' into a `FreeT`-delimited stream of 'Producer's grouped by
-    the supplied equality predicate
+{-| 'span' is an improper isomorphism that splits a 'Producer' in two using
+    the predicate in the forward direction and 'join's the two 'Producer's in
+    the other direction.
+
+> span
+>     :: (Monad m)
+>     => (a -> Bool) -> Iso' (Producer a m r) (Producer a m (Producer a m r))
+-}
+span
+    :: (Functor f, Monad m, Profunctor p)
+    => (a -> Bool)
+    -> p (Producer a m (Producer a m r)) (f (Producer a m (Producer a m r)))
+    -- ^
+    -> p (Producer a m               r ) (f (Producer a m               r ))
+    -- ^
+span predicate = dimap to (fmap join)
+  where
+--  to :: (Monad m) => Producer a m r -> Producer a m (Producer a m r)
+    to p = do
+        x <- lift (next p)
+        case x of
+            Left r        -> return (return r)
+            Right (a, p') ->
+                if (predicate a)
+                then do
+                    yield a
+                    to p'
+                else return (yield a >> p')
+{-# INLINABLE span #-}
+
+{-| 'splitAt' is an improper isomorphism that splits a 'Producer' in two after
+    the given number of elements in the forward direction and 'join's the two
+    'Producer's in the other direction.
+
+> splitAt
+>     :: (Monad m)
+>     => Int -> Iso' (Producer a m r) (Producer a m (Producer a m r))
+-}
+splitAt
+    :: (Functor f, Monad m, Profunctor p)
+    => Int
+    -> p (Producer a m (Producer a m r)) (f (Producer a m (Producer a m r)))
+    -- ^
+    -> p (Producer a m               r ) (f (Producer a m               r ))
+    -- ^
+splitAt n0 = dimap (to n0) (fmap join)
+  where
+--  to :: (Monad m) => Int -> Producer a m r -> Producer a m (Producer a m r)
+    to n p =
+        if (n <= 0)
+        then return p
+        else do
+            x <- lift (next p)
+            case x of
+                Left   r      -> return (return r)
+                Right (a, p') -> do
+                    yield a
+                    to (n - 1) p'
+{-# INLINABLE splitAt #-}
+
+{-| 'groupBy' is an improper isomorphism that groups a `Producer` by the
+    supplied equality predicate in the forward direction and concatenates the
+    groups in the reverse direction.
+
+> groupBy
+>     :: (Monad m)
+>     => (a -> a -> Bool) -> Iso' (Producer a m r) (FreeT (Producer a m) m r)
 -}
 groupBy
-    :: (Monad m)
-    => (a -> a -> Bool) -> Producer a m r -> FreeT (Producer a m) m r
-groupBy equal = loop
+    :: (Functor f, Monad m, Profunctor p)
+    => (a -> a -> Bool)
+    -- ^
+    -> p (FreeT (Producer a m) m r) (f (FreeT (Producer a m) m r))
+    -- ^
+    -> p (Producer  a  m r) (f (Producer  a  m r))
+groupBy equals = dimap to (fmap concat)
   where
-    loop p = do
-        (x, p') <- F.liftF $ runStateP p $ do
-            x <- lift draw
-            case x of
-                Left  r -> return (Just r)
-                Right a -> do
-                    yield a
-                    (Just <$> input) >-> (Nothing <$ takeWhile (equal a))
-        case x of
-            Just r  -> return r
-            Nothing -> loop p'
+--  to :: (Monad m) => Producer a m r -> FreeT (Producer a m) m r
+    to p = FreeT $ do
+        x <- next p
+        return $ case x of
+            Left   r      -> Pure r
+            Right (a, p') -> Free $ do
+	        p'' <- (yield a >> p')^.span (equals a)
+		return $ to p''
 {-# INLINABLE groupBy #-}
 
-{-| Split a 'Producer' into a `FreeT`-delimited stream of 'Producer's of the
-    given chunk size
--}
-chunksOf :: (Monad m) => Int -> Producer a m r -> FreeT (Producer a m) m r
-chunksOf n = loop
-  where
-    loop p = do
-        (x, p') <- F.liftF $ runStateP p $
-            (Just <$> input) >-> (Nothing <$ P.take n)
-        case x of
-            Just r  -> return r
-            Nothing -> loop p'
-{-# INLINABLE chunksOf #-}
+{-| Like 'groupBy', where the equality predicate is ('==')
 
-{-| Split a 'Producer' into a `FreeT`-delimited stream of 'Producer's separated
-    by elements that satisfy the given predicate
+> group
+>     :: (Monad m, Eq a)
+>     => Iso' (Producer a m r) (FreeT (Producer a m) m r)
 -}
-splitOn
-    :: (Monad m) => (a -> Bool) -> Producer a m r -> FreeT (Producer a m) m r
-splitOn predicate = go
+group
+    :: (Functor f, Monad m, Eq a, Profunctor p)
+    => p (FreeT (Producer a m) m r) (f (FreeT (Producer a m) m r))
+    -- ^
+    -> p (Producer  a  m r) (f (Producer  a  m r))
+group = groupBy (==)
+{-# INLINABLE group #-}
+
+{-| 'chunksOf' is an improper isomorphism that groups a `Producer` into
+    sub-'Producer's of fixed size in the forward direction and concatenates the
+    groups in the reverse direction.
+
+> chunksOf
+>     :: (Monad m)
+>     => Int -> Iso' (Producer a m r) (FreeT (Producer a m) m r)
+-}
+chunksOf
+    :: (Functor f, Monad m, Profunctor p)
+    => Int
+    -> p (FreeT (Producer a m) m r) (f (FreeT (Producer a m) m r))
+    -- ^
+    -> p (Producer a m r) (f (Producer a m r))
+    -- ^
+chunksOf n0 = dimap to (fmap concat)
   where
-    go p = do
-        (x, p') <- F.liftF $ runStateP p $ do
-            void input >-> takeWhile (not . predicate)
-            lift draw
-        case x of
-            Left  r -> return r
-            Right _ -> go p'
-{-# INLINABLE splitOn #-}
+--  to :: (Monad m) => Producer a m r -> FreeT (Producer a m) m r
+    to p = FreeT $ do
+        x <- next p
+        return $ case x of
+            Left   r      -> Pure r
+            Right (a, p') -> Free $ do
+                p'' <- (yield a >> p')^.splitAt n0
+                return (to p'')
+{-# INLINABLE chunksOf #-}
 
 -- | Join a 'FreeT'-delimited stream of 'Producer's into a single 'Producer'
 concat :: (Monad m) => FreeT (Producer a m) m r -> Producer a m r
-concat = loop
+concat = go
   where
-    loop f = do
+    go f = do
         x <- lift (runFreeT f)
         case x of
             Pure r -> return r
             Free p -> do
                 f' <- p
-                loop f'
+                go f'
 {-# INLINABLE concat #-}
 
 {-| Join a 'FreeT'-delimited stream of 'Producer's into a single 'Producer' by
@@ -273,9 +347,9 @@ takeProducers = go0
         if (n > 0)
         then do
             x <- runFreeT f
-            case x of
-                Pure r -> return (Pure r)
-                Free p -> return (Free (fmap (go0 $! n - 1) p))
+            return $ case x of
+                Pure r -> Pure r
+                Free p -> Free $ fmap (go0 $! n - 1) p
         else go1 f
     go1 f = do
         x <- runFreeT f
@@ -286,7 +360,7 @@ takeProducers = go0
                 go1 f'
 {-# INLINABLE takeProducers #-}
 
-{-| @(dropFree n)@ peels off the first @n@ layers of a 'FreeT'
+{-| @(dropFree n)@ peels off the first @n@ 'Producer' layers of a 'FreeT'
 
     Use carefully: the peeling off is not free.   This runs the first @n@
     layers, just discarding everything they produce.
@@ -327,6 +401,23 @@ draw = do
             return (Right a)
 {-# INLINABLE draw #-}
 
+{-| Draw all elements from the underlying 'Producer'
+
+    Note that 'drawAll' is not an idiomatic use of @pipes-parse@, but I provide
+    it for simple testing purposes.  Idiomatic @pipes-parse@ style consumes the
+    elements immediately as they are generated instead of loading all elements
+    into memory.
+-}
+drawAll :: (Monad m) => StateT (Producer a m r) m [a]
+drawAll = go id
+  where
+    go diffAs = do
+        ma <- draw
+        case ma of
+            Left  _ -> return (diffAs [])
+            Right a -> go (diffAs . (a:))
+{-# INLINABLE drawAll #-}
+
 -- | Push back an element onto the underlying 'Producer'
 unDraw :: (Monad m) => a -> StateT (Producer a m r) m ()
 unDraw a = S.modify (yield a >>)
@@ -363,73 +454,11 @@ isEndOfInput = do
         Right _ -> False )
 {-# INLINABLE isEndOfInput #-}
 
-{- $highlevel
-    'input' provides a 'Producer' that streams from the underlying 'Producer'.
-
-    Streaming from 'input' differs from streaming directly from the underlying
-    'Producer' because any unused input is saved for later, as the following
-    example illustrates:
-
-> import Control.Monad.Trans.State.Strict
-> import Pipes
-> import Pipes.Parse
-> import qualified Pipes.Prelude as P
->
-> parser :: (Show a) => StateT (Producer a IO ()) IO ()
-> parser = do
->     runEffect $ input >-> P.take 2 >-> P.show >-> P.stdoutLn
->
->     liftIO $ putStrLn "Intermission"
->
->     runEffect $ input >-> P.take 2 >-> P.show >-> P.stdoutLn
-
-    The second pipeline resumes where the first pipeline left off:
-
->>> evalStateT parser (each [1..])
-1
-2
-Intermission
-3
-4
-
-    You can see more examples of how to use these parsing utilities by studying
-    the source code for the above splitters.
--}
-
-{-| Stream from the underlying 'Producer'
-
-    'input' terminates if the 'Producer' is empty, returning the final return
-    value of the 'Producer'.
--}
-input :: (Monad m) => Producer' a (StateT (Producer a m r) m) r
-input = loop
-  where
-    loop = do
-        x <- lift draw
-        case x of
-            Left  r -> return r
-            Right a -> do
-                yield a
-                loop
-{-# INLINABLE input #-}
-
-{-| A variation on 'Pipes.Prelude.takeWhile' from @Pipes.Prelude@ that 'unDraw's
-    the first element that does not match
--}
-takeWhile
-    :: (Monad m) => (a -> Bool) -> Pipe a a (StateT (Producer a m r) m) ()
-takeWhile predicate = loop
-  where
-    loop = do
-        a <- await
-        if (predicate a)
-            then do
-                yield a
-                loop
-            else lift (unDraw a)
-{-# INLINABLE takeWhile #-}
-
 {- $reexports
+    @Lens.Family@ re-exports ('^.') and 'over'.
+
+    @Lens.Family.State.Strict@ re-exports 'zoom'.
+
     @Control.Monad.Trans.Free@ re-exports 'FreeF', 'FreeT', 'runFreeT', and
     'transFreeT'.
 
