@@ -1,5 +1,12 @@
-{-|
-    Element-agnostic parsing utilities for @pipes@
+{-| Element-agnostic parsing utilities for @pipes@
+
+    @pipes-parse@ centers on three abstractions:
+
+    * 'Producer's, unchanged from @pipes@
+
+    * Isomorphisms, which play a role analogous to 'Pipe's
+
+    * Parsers, which play a role analogous to 'Consumer's
 
     @pipes-parse@ provides two ways to parse and transform streams in constant
     space:
@@ -136,8 +143,8 @@ module Pipes.Parse (
 
     -- * Re-exports
     -- $reexports
-    module Lens.Family,
-    module Lens.Family.State.Strict,
+    module Lens.Family2,
+    module Lens.Family2.State.Strict,
     module Control.Monad.Trans.Free,
     module Control.Monad.Trans.State.Strict
     ) where
@@ -148,28 +155,18 @@ import Control.Monad.Trans.Free (
 import qualified Control.Monad.Trans.State.Strict as S
 import Control.Monad.Trans.State.Strict (
     StateT(StateT, runStateT), evalStateT, execStateT )
-import Lens.Family ((^.), over)
-import Lens.Family.State.Strict (zoom)
+import Lens.Family2 (Lens', (^.), over)
+import Lens.Family2.State.Strict (zoom)
 import Pipes
-import Data.Profunctor (Profunctor, dimap)
 import Prelude hiding (concat, takeWhile, splitAt, span)
 
-{-| 'span' is an improper isomorphism that splits a 'Producer' in two using
-    the predicate in the forward direction and 'join's the two 'Producer's in
-    the other direction.
-
-> span
->     :: (Monad m)
->     => (a -> Bool) -> Iso' (Producer a m r) (Producer a m (Producer a m r))
+{-| 'span' is an improper lens from a 'Producer' to two 'Producer's split using
+    the given predicate
 -}
 span
-    :: (Functor f, Monad m, Profunctor p)
-    => (a -> Bool)
-    -> p (Producer a m (Producer a m r)) (f (Producer a m (Producer a m r)))
-    -- ^
-    -> p (Producer a m               r ) (f (Producer a m               r ))
-    -- ^
-span predicate = dimap to (fmap join)
+    :: (Monad m)
+    => (a -> Bool) -> Lens' (Producer a m r) (Producer a m (Producer a m r))
+span predicate k p0 = fmap join (k (to p0))
   where
 --  to :: (Monad m) => Producer a m r -> Producer a m (Producer a m r)
     to p = do
@@ -184,22 +181,13 @@ span predicate = dimap to (fmap join)
                 else return (yield a >> p')
 {-# INLINABLE span #-}
 
-{-| 'splitAt' is an improper isomorphism that splits a 'Producer' in two after
-    the given number of elements in the forward direction and 'join's the two
-    'Producer's in the other direction.
-
-> splitAt
->     :: (Monad m)
->     => Int -> Iso' (Producer a m r) (Producer a m (Producer a m r))
+{-| 'splitAt' is an improper lens from a 'Producer' to two 'Producer's split
+    after the given number of elements
 -}
 splitAt
-    :: (Functor f, Monad m, Profunctor p)
-    => Int
-    -> p (Producer a m (Producer a m r)) (f (Producer a m (Producer a m r)))
-    -- ^
-    -> p (Producer a m               r ) (f (Producer a m               r ))
-    -- ^
-splitAt n0 = dimap (to n0) (fmap join)
+    :: (Monad m)
+    => Int -> Lens' (Producer a m r) (Producer a m (Producer a m r))
+splitAt n0 k p0 = fmap join (k (to n0 p0))
   where
 --  to :: (Monad m) => Int -> Producer a m r -> Producer a m (Producer a m r)
     to n p =
@@ -214,22 +202,13 @@ splitAt n0 = dimap (to n0) (fmap join)
                     to (n - 1) p'
 {-# INLINABLE splitAt #-}
 
-{-| 'groupBy' is an improper isomorphism that groups a `Producer` by the
-    supplied equality predicate in the forward direction and concatenates the
-    groups in the reverse direction.
-
-> groupBy
->     :: (Monad m)
->     => (a -> a -> Bool) -> Iso' (Producer a m r) (FreeT (Producer a m) m r)
+{-| 'groupBy' is an improper lens from a 'Producer' to a 'FreeT' of 'Producer's
+    grouped using the given equality predicate
 -}
 groupBy
-    :: (Functor f, Monad m, Profunctor p)
-    => (a -> a -> Bool)
-    -- ^
-    -> p (FreeT (Producer a m) m r) (f (FreeT (Producer a m) m r))
-    -- ^
-    -> p (Producer  a  m r) (f (Producer  a  m r))
-groupBy equals = dimap to (fmap concat)
+    :: (Monad m)
+    => (a -> a -> Bool) -> Lens' (Producer a m r) (FreeT (Producer a m) m r)
+groupBy equals k p0 = fmap concat (k (to p0)) -- dimap to (fmap concat)
   where
 --  to :: (Monad m) => Producer a m r -> FreeT (Producer a m) m r
     to p = FreeT $ do
@@ -241,36 +220,17 @@ groupBy equals = dimap to (fmap concat)
 		return $ to p''
 {-# INLINABLE groupBy #-}
 
-{-| Like 'groupBy', where the equality predicate is ('==')
-
-> group
->     :: (Monad m, Eq a)
->     => Iso' (Producer a m r) (FreeT (Producer a m) m r)
--}
-group
-    :: (Functor f, Monad m, Eq a, Profunctor p)
-    => p (FreeT (Producer a m) m r) (f (FreeT (Producer a m) m r))
-    -- ^
-    -> p (Producer  a  m r) (f (Producer  a  m r))
+-- | Like 'groupBy', where the equality predicate is ('==')
+group :: (Monad m, Eq a) => Lens' (Producer a m r) (FreeT (Producer a m) m r)
 group = groupBy (==)
 {-# INLINABLE group #-}
 
-{-| 'chunksOf' is an improper isomorphism that groups a `Producer` into
-    sub-'Producer's of fixed size in the forward direction and concatenates the
-    groups in the reverse direction.
-
-> chunksOf
->     :: (Monad m)
->     => Int -> Iso' (Producer a m r) (FreeT (Producer a m) m r)
+{-| 'chunksOf' is an improper lens from a 'Producer' to a 'FreeT' of 'Producer's
+    of fixed length
 -}
 chunksOf
-    :: (Functor f, Monad m, Profunctor p)
-    => Int
-    -> p (FreeT (Producer a m) m r) (f (FreeT (Producer a m) m r))
-    -- ^
-    -> p (Producer a m r) (f (Producer a m r))
-    -- ^
-chunksOf n0 = dimap to (fmap concat)
+    :: (Monad m) => Int -> Lens' (Producer a m r) (FreeT (Producer a m) m r)
+chunksOf n0 k p0 = fmap concat (k (to p0))
   where
 --  to :: (Monad m) => Producer a m r -> FreeT (Producer a m) m r
     to p = FreeT $ do
@@ -455,9 +415,9 @@ isEndOfInput = do
 {-# INLINABLE isEndOfInput #-}
 
 {- $reexports
-    @Lens.Family@ re-exports ('^.') and 'over'.
+    @Lens.Family2@ re-exports 'Lens'', ('^.') and 'over'.
 
-    @Lens.Family.State.Strict@ re-exports 'zoom'.
+    @Lens.Family2.State.Strict@ re-exports 'zoom'.
 
     @Control.Monad.Trans.Free@ re-exports 'FreeF', 'FreeT', 'runFreeT', and
     'transFreeT'.
