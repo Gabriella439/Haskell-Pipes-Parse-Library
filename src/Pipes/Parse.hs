@@ -32,13 +32,16 @@ module Pipes.Parse (
 
     -- * Re-exports
     -- $reexports
+    module Control.Monad.Trans.Class,
+    module Control.Monad.Trans.Free,
+    module Control.Monad.Trans.State.Strict,
     module Lens.Family2,
     module Lens.Family2.State.Strict,
-    module Control.Monad.Trans.Free,
-    module Control.Monad.Trans.State.Strict
+    module Pipes
     ) where
 
 import Control.Monad (join)
+import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Free (
     FreeF(Pure, Free), FreeT(FreeT, runFreeT), transFreeT )
 import qualified Control.Monad.Trans.State.Strict as S
@@ -46,7 +49,8 @@ import Control.Monad.Trans.State.Strict (
     StateT(StateT, runStateT), evalStateT, execStateT )
 import Lens.Family2 (Lens', (^.), over)
 import Lens.Family2.State.Strict (zoom)
-import Pipes
+import Pipes (Producer, yield, next)
+import qualified Pipes as P
 import Prelude hiding (concat, takeWhile, splitAt, span)
 
 {- $parser
@@ -57,7 +61,7 @@ import Prelude hiding (concat, takeWhile, splitAt, span)
 -- | A 'Parser' is an action that reads from and writes to a stored 'Producer'
 type Parser a m r = forall x . StateT (Producer a m x) m r
 
-{-| Draw one element from the underlying 'Producer', returning 'Left' if the
+{-| Draw one element from the underlying 'Producer', returning 'Nothing' if the
     'Producer' is empty
 -}
 draw :: (Monad m) => Parser a m (Maybe a)
@@ -101,8 +105,8 @@ unDraw a = S.modify (yield a >>)
 > peek = do
 >     x <- draw
 >     case x of
->         Left  _ -> return ()
->         Right a -> unDraw a
+>         Nothing -> return ()
+>         Just  a -> unDraw a
 >     return x
 -}
 peek :: (Monad m) => Parser a m (Maybe a)
@@ -282,7 +286,7 @@ takes' = go0
         case x of
             Pure r -> return (Pure r)
             Free p -> do
-                f' <- runEffect (for p discard)
+                f' <- P.runEffect (P.for p P.discard)
                 go1 f'
 {-# INLINABLE takes' #-}
 
@@ -302,18 +306,22 @@ drops = go
             case ff of
                 Pure _ -> return ff
                 Free f -> do
-                    ft' <- runEffect $ for f discard
+                    ft' <- P.runEffect $ P.for f P.discard
                     runFreeT $ go (n-1) ft'
 {-# INLINABLE drops #-}
 
 {- $reexports
-    @Lens.Family2@ re-exports 'Lens'', ('^.') and 'over'.
-
-    @Lens.Family2.State.Strict@ re-exports 'zoom'.
+    @Control.Monad.Trans.Class@ re-exports 'lift'.
 
     @Control.Monad.Trans.Free@ re-exports 'FreeF', 'FreeT', 'runFreeT', and
     'transFreeT'.
 
     @Control.Monad.Trans.State.Strict@ re-exports 'StateT', 'runStateT',
     'evalStateT', and 'execStateT'.
+
+    @Lens.Family2@ re-exports 'Lens'', ('^.') and 'over'.
+
+    @Lens.Family2.State.Strict@ re-exports 'zoom'.
+
+    @Pipes@ re-exports 'Producer', 'yield', and 'next'
 -}
