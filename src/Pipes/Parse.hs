@@ -30,6 +30,10 @@ module Pipes.Parse (
     concats,
     intercalate,
 
+    -- * Folds
+    folds,
+    foldsM,
+
     -- * Re-exports
     -- $reexports
     module Control.Monad.Trans.Class,
@@ -40,6 +44,7 @@ module Pipes.Parse (
     module Pipes
     ) where
 
+import Control.Foldl (Fold(Fold), FoldM(FoldM))
 import Control.Monad (join)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Free (
@@ -308,6 +313,52 @@ drops = go
                     ft' <- P.runEffect $ P.for f P.discard
                     runFreeT $ go (n-1) ft'
 {-# INLINABLE drops #-}
+
+-- | Fold each 'Producer' of a 'FreeT' using a 'Fold'
+folds :: (Monad m) => Fold a b -> FreeT (Producer a m) m r -> Producer b m r
+folds (Fold step begin done) = go
+  where
+    go f = do
+        x <- lift (runFreeT f)
+        case x of
+            Pure r -> return r
+            Free p -> do
+	        (f', b) <- lift (fold p begin)
+	        yield b
+	        go f'
+
+    fold p x = do
+        y <- next p
+        case y of
+            Left   f      -> return (f, done x)
+            Right (a, p') -> fold p' $! step x a
+{-# INLINABLE folds #-}
+
+-- | Fold each 'Producer' of a 'FreeT' using a 'FoldM'
+foldsM
+    :: (Monad m) => FoldM m a b -> FreeT (Producer a m) m r -> Producer b m r
+foldsM (FoldM step begin done) = go
+  where
+    go f = do
+        y <- lift (runFreeT f)
+        case y of
+            Pure r -> return r
+            Free p -> do
+                (f', b) <- lift $ do
+                    x <- begin
+		    foldM p x
+                yield b
+                go f'
+
+    foldM p x = do
+        y <- next p
+        case y of
+            Left   f      -> do
+                b <- done x
+                return (f, b)
+            Right (a, p') -> do
+                x' <- step x a
+                foldM p' $! x'
 
 {- $reexports
     @Control.Monad.Trans.Class@ re-exports 'lift'.
