@@ -119,7 +119,7 @@ peek = do
 
 {-| Check if the underlying 'Producer' is empty
 
-> isEndOfInput = liftM isNothing peek
+> isEndOfInput = fmap isNothing peek
 -}
 isEndOfInput :: (Monad m) => Parser a m Bool
 isEndOfInput = do
@@ -211,7 +211,7 @@ chunksOf n0 k p0 = fmap concats (k (to p0))
                 return (to p'')
 {-# INLINABLE chunksOf #-}
 
--- | Join a 'FreeT'-detakesed stream of 'Producer's into a single 'Producer'
+-- | Join a 'FreeT'-delimited stream of 'Producer's into a single 'Producer'
 concats :: (Monad m) => FreeT (Producer a m) m x -> Producer a m x
 concats = go
   where
@@ -224,7 +224,7 @@ concats = go
                 go f'
 {-# INLINABLE concats #-}
 
-{-| Join a 'FreeT'-detakesed stream of 'Producer's into a single 'Producer' by
+{-| Join a 'FreeT'-delimited stream of 'Producer's into a single 'Producer' by
     intercalating a 'Producer' in between them
 -}
 intercalate
@@ -322,5 +322,5 @@ drops = go
 
     @Lens.Family2.State.Strict@ re-exports 'zoom'.
 
-    @Pipes@ re-exports 'Producer', 'yield', and 'next'
+    @Pipes@ re-exports 'Producer', 'yield', and 'next'.
 -}
