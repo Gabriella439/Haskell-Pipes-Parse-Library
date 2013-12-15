@@ -1,4 +1,4 @@
-# Pipes-Parse v2.0.3
+# Pipes-Parse v3.0.0
 
 `pipes-parse` builds upon
 [the `pipes` library](https://github.com/Gabriel439/Haskell-Pipes-Library) to
