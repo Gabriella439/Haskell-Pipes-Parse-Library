@@ -190,8 +190,15 @@ Just (1, 2)
     'Producer' contains up to 3 elements and the inner 'Producer' contains the
     remainder of the elements.
 
->>> :set -XNoMonomorphismRestriction
->>> let outer = view (splitsAt 3) (each [1..6])  -- or: each [1..6]^.splitsAt 3
+> outer :: (Monad m) => Producer Int m (Producer Int m ())
+> outer = view (splitsAt 3) (each [1..6])
+>
+> -- or: outer = each [1..6]^.splitsAt 3
+>
+> -- or: outer = do
+> --     each [1..3]
+> --     return $ each [4..6]
+
 >>> inner <- runEffect $ for outer (lift . print)
 1
 2
@@ -302,7 +309,7 @@ Just (1, 2)
 > -- A "joiner"
 > FreeT (Producer a m) m () -> Producer a m ()            ~  [[a]] ->  [a]
 
-    An example splitter is @(view groups)@, which splits a 'Producer' into a
+    An example splitter is @(view groups)@, which splits a 'Producer' into
     'FreeT'-delimited 'Producer's, one for each group of consecutive equal
     elements:
 
@@ -322,15 +329,18 @@ Just (1, 2)
     that transforms a 'Producer' to keep only the first three groups of
     consecutive equal elements:
 
-> concats . takes 3 . view groups
->     :: (Monad m) => Producer a m x -> Producer a m x
+> import Pipes.Parse
+>
+> threeGroups :: (Monad m, Eq a) => Producer a m () -> Producer a m ()
+> threeGroups = concats . takes 3 . view groups
 
-    For example:
+    Both splitting and joining preserve the streaming nature of 'Producer's and
+    do not collect or buffer any values.  The transformed 'Producer' still
+    outputs values immediately and does not wait for groups to complete before
+    producing results.
 
->>> import Pipes.Parse
+>>> import Pipes
 >>> import qualified Pipes.Prelude as P
->>> :set -XNoMonomorphismRestriction
->>> let threeGroups = concats . takes 3 . view groups
 >>> runEffect $ threeGroups P.stdinLn >-> P.stdoutLn
 1<Enter>
 1
@@ -345,21 +355,16 @@ Just (1, 2)
 4<Enter>
 >>> -- Note that the 4 is not echoed
 
-    Both splitting and joining preserve the streaming nature of 'Producer's and
-    do not buffer any values.  The transformed 'Producer' still outputs values
-    immediately and does not wait for groups to complete before producing
-    results.
-
     Also, lenses simplify things even further.  The reason that 'groups' is a
     lens is because it actually packages both a splitter and joiner into a
     single package.  We can then use 'over' to handle both the splitting and
     joining for us:
 
 >>> runEffect $ over groups (takes 3) P.stdinLn >-> P.stdoutLn
-<Exact same behavior>
 
-    'over' takes care of calling the splitter before applying the
-    transformation, then calling the joiner afterward.
+    This gives the exact same behavior because 'over' takes care of calling the
+    splitter before applying the transformation, then calling the joiner
+    afterward.
 -}
 
 {- $conclusion
