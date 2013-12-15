@@ -35,17 +35,11 @@ import Pipes.Parse
 {- $overview
     @pipes-parse@ centers on three abstractions:
 
-    * 'Producer's, unchanged from @pipes@, such as:
+    * 'Producer's, unchanged from @pipes@
 
-> producer :: Producer a m x
+    * 'Parser's, which play a role analogous to 'Consumer's
 
-    * 'Lens''es between 'Producer's, which play a role analogous to 'Pipe's:
-
-> lens :: Lens' (Producer a m x) (Producer b m y)
-
-    * 'Parser's, which play a role analogous to 'Consumer's:
-
-> parser :: Parser b m r
+    * 'Lens''es between 'Producer's, which play a role analogous to 'Pipe's
 
     There are four ways to connect these three abstractions:
 
@@ -55,8 +49,6 @@ import Pipes.Parse
 > runStateT  :: Parser a m r -> Producer a m x -> m (r, Producer a m x)
 > evalStateT :: Parser a m r -> Producer a m x -> m  r
 > execStateT :: Parser a m r -> Producer a m x -> m (   Producer a m x)
->
-> evalStateT parser producer :: m r
 
 
     * Connect 'Lens''s to 'Parser'es using 'zoom'
@@ -64,8 +56,6 @@ import Pipes.Parse
 > zoom :: Lens' (Producer a m x) (Producer b m y)
 >      -> Parser b m r
 >      -> Parser a m r
->
-> zoom lens parser :: Parser a m r
 
     * Connect 'Producer's to 'Lens''es using 'view' or ('^.'):
 
@@ -73,8 +63,6 @@ import Pipes.Parse
 >     :: Producer a m x
 >     -> Lens' (Producer a m x) (Producer b m y)
 >     -> Producer b m y
->
-> producer^.lens :: Producer b m r
 
     * Connect 'Lens''es to 'Lens''es using ('.') (i.e. function composition):
 
@@ -121,13 +109,13 @@ import Pipes.Parse
 > execStateT :: Parser a m r -> Producer a m x -> m (   Producer a m x)
 
     All three of these functions require a 'Producer' which we feed to the
-    'Parser'.  For example, we can feed a pure stream of natural numbers:
+    'Parser'.  For example, we can feed standard input:
 
 >>> import qualified Pipes.Prelude as P
 >>> evalStateT drawTwo P.stdinLn
 Pink<Enter>
 Elephants<Enter>
-Just ("Pink", "Elephants")
+Just ("Pink","Elephants")
 
     The result is wrapped in a 'Maybe' because our 'Producer' might have less
     than two elements:
@@ -137,6 +125,18 @@ Nothing
 
     If either of our two 'draw's fails and returns 'Nothing', the combined
     result will be 'Nothing'.
+
+    We can use 'runStateT' or 'execStateT' to retrieve unused elements after
+    parsing:
+
+>>> import Pipes
+>>> (result, unused) <- runStateT drawTwo (each [1..4])
+>>> print result
+Just (1, 2)
+>>> runEffect $ for unused (lift . print)
+3
+4
+
 -}
 
 {- $lenses
@@ -158,8 +158,8 @@ Nothing
 >>> evalStateT drawAll (each [1..])
 <Does not terminate>
 
-    But what if you wanted to draw just the first ten elements from an infinite
-    stream?  This is what lenses are for:
+    But what if you wanted to draw just the first three elements from an
+    infinite stream?  This is what lenses are for:
 
 > import Pipes
 > import Pipes.Parse
@@ -168,7 +168,7 @@ Nothing
 > drawThree = zoom (splitsAt 3) drawAll
 
     'zoom' lets you delimit a 'Parser' using a 'Lens'.  The above code says to
-    limit 'drawAll' to a subset of the input, in this case the first 10
+    limit 'drawAll' to a subset of the input, in this case the first three
     elements:
 
 >>> evalStateT drawThree (each [1..])
@@ -202,7 +202,7 @@ Nothing
 6
 
     'zoom' takes our lens a step further and uses it to limit our parser to the
-    outer 'Producer' (the first 10 elements).  When the parser is done 'zoom'
+    outer 'Producer' (the first three elements).  When the parser is done 'zoom'
     also returns unused elements back to the original stream.  We can
     demonstrate this using the following example parser:
 
@@ -242,32 +242,56 @@ Nothing
 >
 > zoom id = id
 
+    Also note that 'view' nesting obeys the following two laws:
+
+> view lens2 . view lens1 = view (lens1 . lens2)
+>
+> view id = id
+
+    Both the 'zoom' and 'view' laws are examples of functor laws, and they
+    ensure that it does not matter whether you prefer to connect lenses to each
+    other or directly to 'Producer's and 'Parser's.
+
     However, the lenses in this library are improper, meaning that they violate
-    certain lens laws.  The consequence of this is that 'zoom' does not obey the
-    monad morphism laws for these lenses.  For example:
+    certain lens laws.  The first consequence of this is that 'zoom' does not
+    obey the monad morphism laws for these lenses.  For example:
 
 > do x <- zoom (splitsAt 3) m  /=  zoom (splitsAt 3) $ do x <- m
 >    zoom (splitsAt 3) (f x)                              f x
+
+    The second consequence is that these lenses cannot always be used as
+    setters.  For example:
+
+> p = do
+>     each [1, 2]
+>     return $ each [3, 4]
+>
+> p2 = view (splitsAt 1) (set (splitsAt 1) p (return ()))
+>
+> -- p2 = do
+> --     yield 1
+> --     return $ each [2, 3, 4]
+> --
+> -- p1 /= p2, which violates the first lens law
+
 -}
 
 {- $freeT
     @pipes-parse@ also provides convenient utilities for working with grouped
-    streams in a list-like manner.  They analogy to list-like functions:
+    streams in a list-like manner.  These utilities are analogous to list-like
+    functions if you make the following translations:
 
 > -- '~' means "is analogous to"
 > Producer a m ()            ~   [a]
 >
 > FreeT (Producer a m) m ()  ~  [[a]]
 
-    'FreeT' nests each subsequent 'Producer' within the return value of the
-    previous 'Producer' so that you cannot access the next 'Producer' until you
+    Think of @FreeT (Producer a m) m ()@ as a \"list of 'Producer's\".  'FreeT'
+    nests each subsequent 'Producer' within the return value of the previous
+    'Producer' so that you cannot access the next 'Producer' until you
     completely drain the current 'Producer'.  However, you rarely need to work
-    with 'FreeT' directly.  Instead, you structure everything using
+    with 'FreeT' directly.  Instead, you can structure most things using
     \"splitters\", \"transformations\" and \"joiners\":
-
-    * Splitters: These split a 'Producer' into multiple sub-'Producer's
-      delimited by 'FreeT':
-
 
 > -- A "splitter"
 > Producer a m ()           -> FreeT (Producer a m) m ()  ~   [a]  -> [[a]]
