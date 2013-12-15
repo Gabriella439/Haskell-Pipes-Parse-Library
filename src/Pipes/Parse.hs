@@ -22,9 +22,9 @@ module Pipes.Parse (
     chunksOf,
 
     -- * Transformations
-    limit,
-    limit',
-    dropFree,
+    takes,
+    takes',
+    drops,
 
     -- * Joiners
     concat,
@@ -208,7 +208,7 @@ chunksOf n0 k p0 = fmap concat (k (to p0))
                 return (to p'')
 {-# INLINABLE chunksOf #-}
 
--- | Join a 'FreeT'-delimited stream of 'Producer's into a single 'Producer'
+-- | Join a 'FreeT'-detakesed stream of 'Producer's into a single 'Producer'
 concat :: (Monad m) => FreeT (Producer a m) m x -> Producer a m x
 concat = go
   where
@@ -221,7 +221,7 @@ concat = go
                 go f'
 {-# INLINABLE concat #-}
 
-{-| Join a 'FreeT'-delimited stream of 'Producer's into a single 'Producer' by
+{-| Join a 'FreeT'-detakesed stream of 'Producer's into a single 'Producer' by
     intercalating a 'Producer' in between them
 -}
 intercalate
@@ -246,9 +246,9 @@ intercalate sep = go0
                 go1 f'
 {-# INLINABLE intercalate #-}
 
--- | @(limit n)@ only keeps the first @n@ functor layers of a 'FreeT'
-limit :: (Functor f, Monad m) => Int -> FreeT f m () -> FreeT f m ()
-limit = go
+-- | @(takes n)@ only keeps the first @n@ functor layers of a 'FreeT'
+takes :: (Functor f, Monad m) => Int -> FreeT f m () -> FreeT f m ()
+takes = go
   where
     go n f =
         if (n > 0)
@@ -258,16 +258,16 @@ limit = go
                 Pure () -> return (Pure ())
                 Free w  -> return (Free (fmap (go $! n - 1) w))
         else return ()
-{-# INLINABLE limit #-}
+{-# INLINABLE takes #-}
 
-{-| @(limit' n)@ only keeps the first @n@ 'Producer's of a 'FreeT'
+{-| @(takes' n)@ only keeps the first @n@ 'Producer's of a 'FreeT'
 
-    'limit'' differs from 'limit' by draining unused 'Producer's in order
+    'takes'' differs from 'takes' by draining unused 'Producer's in order
     to preserve the return value.
 -}
-limit'
+takes'
     :: (Monad m) => Int -> FreeT (Producer a m) m x -> FreeT (Producer a m) m x
-limit' = go0
+takes' = go0
   where
     go0 n f = FreeT $
         if (n > 0)
@@ -284,16 +284,16 @@ limit' = go0
             Free p -> do
                 f' <- runEffect (for p discard)
                 go1 f'
-{-# INLINABLE limit' #-}
+{-# INLINABLE takes' #-}
 
-{-| @(dropFree n)@ peels off the first @n@ 'Producer' layers of a 'FreeT'
+{-| @(drops n)@ peels off the first @n@ 'Producer' layers of a 'FreeT'
 
     Use carefully: the peeling off is not free.   This runs the first @n@
     layers, just discarding everything they produce.
 -}
-dropFree
+drops
     :: (Monad m) => Int -> FreeT (Producer a m) m x -> FreeT (Producer a m) m x
-dropFree = go
+drops = go
   where
     go n ft
         | n <= 0 = ft
@@ -304,7 +304,7 @@ dropFree = go
                 Free f -> do
                     ft' <- runEffect $ for f discard
                     runFreeT $ go (n-1) ft'
-{-# INLINABLE dropFree #-}
+{-# INLINABLE drops #-}
 
 {- $reexports
     @Lens.Family2@ re-exports 'Lens'', ('^.') and 'over'.
