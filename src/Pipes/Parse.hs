@@ -1,125 +1,22 @@
-{-| Element-agnostic parsing utilities for @pipes@
-
-    @pipes-parse@ centers on three abstractions:
-
-    * 'Producer's, unchanged from @pipes@
-
-    * Isomorphisms, which play a role analogous to 'Pipe's
-
-    * Parsers, which play a role analogous to 'Consumer's
-
-    @pipes-parse@ provides two ways to parse and transform streams in constant
-    space:
-
-    * The \"list-like\" approach, using the split \/ transform \/ join paradigm
-
-    * The monadic approach, using parser combinators
-
-    The top half of this module provides the list-like approach, which is easier
-    to use, but less powerful.  The key idea is that:
-
-> -- '~' means "is analogous to"
-> Producer a m ()            ~   [a]
->
-> FreeT (Producer a m) m ()  ~  [[a]]
-
-    'FreeT' nests each subsequent 'Producer' within the return value of the
-    previous 'Producer' so that you cannot access the next 'Producer' until you
-    completely drain the current 'Producer'.  However, you rarely need to work
-    with 'FreeT' directly.  Instead, you structure everything using
-    \"splitters\", \"transformations\" and \"joiners\":
-
-> -- A "splitter"
-> Producer a m ()           -> FreeT (Producer a m) m ()  ~   [a]  -> [[a]]
->
-> -- A "transformation"
-> FreeT (Producer a m) m () -> FreeT (Producer a m) m ()  ~  [[a]] -> [[a]]
->
-> -- A "joiner"
-> FreeT (Producer a m) m () -> Producer a m ()            ~  [[a]] ->  [a]
-
-    For example, if you wanted to group standard input by equal lines and take
-    the first three groups, you would write:
-
-> import Pipes
-> import qualified Pipes.Parse as Parse
-> import qualified Pipes.Prelude as Prelude
->
-> threeGroups :: (Monad m, Eq a) => Producer a m () -> Producer a m ()
-> threeGroups = Parse.concat . Parse.takeFree 3 . Parse.groupBy (==)
-> --            ^ Joiner       ^ Transformation   ^ Splitter
-
-    This then limits standard input to the first three consecutive groups of
-    equal lines:
-
->>> runEffect $ threeGroups Prelude.stdinLn >-> Prelude.stdoutLn
-Group1<Enter>
-Group1
-Group1<Enter>
-Group1
-Group2<Enter>
-Group2
-Group3<Enter>
-Group3
-Group3<Enter>
-Group3
-Group4<Enter>
->>> -- Done, because we began entering our fourth group
-
-    The advantage of this style or programming is that you never bring more than
-    a single element into memory.  This works because `FreeT` sub-divides the
-    `Producer` without concatenating elements together, preserving the laziness
-    of the underlying 'Producer'.
-
-    The bottom half of this module lets you implement your own list-like
-    transformations using monadic parsers.
-
-    For example, if you wanted to repeatedly sum every 3 elements and yield the
-    result, you would write:
-
-> import Control.Monad (unless)
-> import Pipes
-> import qualified Pipes.Prelude as P
-> import Pipes.Parse
->
-> sum3 :: (Monad m, Num a) => Producer a (StateT (Producer a m ()) m) ()
-> sum3 = do
->     eof <- lift isEndOfInput
->     unless eof $ do
->         n <- lift $ P.sum (input >-> P.take 3)
->         yield n
->         sum3
-
-    When you are done building the parser, you convert your parser to a
-    list-like function using `evalStateP`:
-
-> import Pipes.Lift (evalStateP)
->
-> -- sum3'  ~  (Num a) => [a] -> [a]
->
-> sum3' :: (Monad m, Num a) => Producer a m () -> Producer a m ()
-> sum3' p = evalStateP p sum3
-
-    ... then apply it to the `Producer` you want to transform:
-
->>> runEffect $ sum3' (P.readLn >-> P.takeWhile (/= 0)) >-> P.print
-1<Enter>
-4<Enter>
-5<Enter>
-10
-2<Enter>
-0<Enter>
-2
->>>
-
--}
+-- | Element-agnostic parsing utilities for @pipes@
 
 {-# LANGUAGE RankNTypes #-}
 
 module Pipes.Parse (
-    -- * Isomorphisms
+    -- * Parsers
+    -- $parser
+    Parser,
+    draw,
+    drawAll,
+    unDraw,
+    peek,
+    isEndOfInput,
+
+    -- * Lenses
     span,
     splitAt,
+
+    -- * Splitters
     groupBy,
     group,
     chunksOf,
@@ -132,14 +29,6 @@ module Pipes.Parse (
     -- * Joiners
     concat,
     intercalate,
-
-    -- * Parsers
-    -- $lowlevel
-    draw,
-    drawAll,
-    unDraw,
-    peek,
-    isEndOfInput,
 
     -- * Re-exports
     -- $reexports
@@ -160,12 +49,89 @@ import Lens.Family2.State.Strict (zoom)
 import Pipes
 import Prelude hiding (concat, takeWhile, splitAt, span)
 
+{- $parser
+    @pipes-parse@ handles end-of-input and pushback by storing a 'Producer' in
+    a 'StateT' layer.
+-}
+
+-- | A 'Parser' is an action that reads from and writes to a stored 'Producer'
+type Parser a m r = forall x . StateT (Producer a m x) m r
+
+{-| Draw one element from the underlying 'Producer', returning 'Left' if the
+    'Producer' is empty
+-}
+draw :: (Monad m) => Parser a m (Maybe a)
+draw = do
+    p <- S.get
+    x <- lift (next p)
+    case x of
+        Left   r      -> do
+            S.put (return r)
+            return Nothing
+        Right (a, p') -> do
+            S.put p'
+            return (Just a)
+{-# INLINABLE draw #-}
+
+{-| Draw all elements from the underlying 'Producer'
+
+    Note that 'drawAll' is not an idiomatic use of @pipes-parse@, but I provide
+    it for simple testing purposes.  Idiomatic @pipes-parse@ style consumes the
+    elements immediately as they are generated instead of loading all elements
+    into memory.
+-}
+drawAll :: (Monad m) => Parser a m [a]
+drawAll = go id
+  where
+    go diffAs = do
+        ma <- draw
+        case ma of
+            Nothing -> return (diffAs [])
+            Just a  -> go (diffAs . (a:))
+{-# INLINABLE drawAll #-}
+
+-- | Push back an element onto the underlying 'Producer'
+unDraw :: (Monad m) => a -> Parser a m ()
+unDraw a = S.modify (yield a >>)
+{-# INLINABLE unDraw #-}
+
+{-| 'peek' checks the first element of the stream, but uses 'unDraw' to push the
+    element back so that it is available for the next 'draw' command.
+
+> peek = do
+>     x <- draw
+>     case x of
+>         Left  _ -> return ()
+>         Right a -> unDraw a
+>     return x
+-}
+peek :: (Monad m) => Parser a m (Maybe a)
+peek = do
+    x <- draw
+    case x of
+        Nothing -> return ()
+        Just a  -> unDraw a
+    return x
+{-# INLINABLE peek #-}
+
+{-| Check if the underlying 'Producer' is empty
+
+> isEndOfInput = liftM isNothing peek
+-}
+isEndOfInput :: (Monad m) => Parser a m Bool
+isEndOfInput = do
+    x <- peek
+    return (case x of
+        Nothing -> True
+        Just _  -> False )
+{-# INLINABLE isEndOfInput #-}
+
 {-| 'span' is an improper lens from a 'Producer' to two 'Producer's split using
     the given predicate
 -}
 span
     :: (Monad m)
-    => (a -> Bool) -> Lens' (Producer a m r) (Producer a m (Producer a m r))
+    => (a -> Bool) -> Lens' (Producer a m x) (Producer a m (Producer a m x))
 span predicate k p0 = fmap join (k (to p0))
   where
 --  to :: (Monad m) => Producer a m r -> Producer a m (Producer a m r)
@@ -186,7 +152,7 @@ span predicate k p0 = fmap join (k (to p0))
 -}
 splitAt
     :: (Monad m)
-    => Int -> Lens' (Producer a m r) (Producer a m (Producer a m r))
+    => Int -> Lens' (Producer a m x) (Producer a m (Producer a m x))
 splitAt n0 k p0 = fmap join (k (to n0 p0))
   where
 --  to :: (Monad m) => Int -> Producer a m r -> Producer a m (Producer a m r)
@@ -207,7 +173,7 @@ splitAt n0 k p0 = fmap join (k (to n0 p0))
 -}
 groupBy
     :: (Monad m)
-    => (a -> a -> Bool) -> Lens' (Producer a m r) (FreeT (Producer a m) m r)
+    => (a -> a -> Bool) -> Lens' (Producer a m x) (FreeT (Producer a m) m x)
 groupBy equals k p0 = fmap concat (k (to p0)) -- dimap to (fmap concat)
   where
 --  to :: (Monad m) => Producer a m r -> FreeT (Producer a m) m r
@@ -221,7 +187,7 @@ groupBy equals k p0 = fmap concat (k (to p0)) -- dimap to (fmap concat)
 {-# INLINABLE groupBy #-}
 
 -- | Like 'groupBy', where the equality predicate is ('==')
-group :: (Monad m, Eq a) => Lens' (Producer a m r) (FreeT (Producer a m) m r)
+group :: (Monad m, Eq a) => Lens' (Producer a m x) (FreeT (Producer a m) m x)
 group = groupBy (==)
 {-# INLINABLE group #-}
 
@@ -229,7 +195,7 @@ group = groupBy (==)
     of fixed length
 -}
 chunksOf
-    :: (Monad m) => Int -> Lens' (Producer a m r) (FreeT (Producer a m) m r)
+    :: (Monad m) => Int -> Lens' (Producer a m x) (FreeT (Producer a m) m x)
 chunksOf n0 k p0 = fmap concat (k (to p0))
   where
 --  to :: (Monad m) => Producer a m r -> FreeT (Producer a m) m r
@@ -243,7 +209,7 @@ chunksOf n0 k p0 = fmap concat (k (to p0))
 {-# INLINABLE chunksOf #-}
 
 -- | Join a 'FreeT'-delimited stream of 'Producer's into a single 'Producer'
-concat :: (Monad m) => FreeT (Producer a m) m r -> Producer a m r
+concat :: (Monad m) => FreeT (Producer a m) m x -> Producer a m x
 concat = go
   where
     go f = do
@@ -260,7 +226,7 @@ concat = go
 -}
 intercalate
     :: (Monad m)
-    => Producer a m () -> FreeT (Producer a m) m r -> Producer a m r
+    => Producer a m () -> FreeT (Producer a m) m x -> Producer a m x
 intercalate sep = go0
   where
     go0 f = do
@@ -300,7 +266,7 @@ takeFree = go
     to preserve the return value.
 -}
 takeProducers
-    :: (Monad m) => Int -> FreeT (Producer a m) m r -> FreeT (Producer a m) m r
+    :: (Monad m) => Int -> FreeT (Producer a m) m x -> FreeT (Producer a m) m x
 takeProducers = go0
   where
     go0 n f = FreeT $
@@ -326,7 +292,7 @@ takeProducers = go0
     layers, just discarding everything they produce.
 -}
 dropFree
-    :: (Monad m) => Int -> FreeT (Producer a m) m r -> FreeT (Producer a m) m r
+    :: (Monad m) => Int -> FreeT (Producer a m) m x -> FreeT (Producer a m) m x
 dropFree = go
   where
     go n ft
@@ -339,80 +305,6 @@ dropFree = go
                     ft' <- runEffect $ for f discard
                     runFreeT $ go (n-1) ft'
 {-# INLINABLE dropFree #-}
-
-{- $lowlevel
-    @pipes-parse@ handles end-of-input and pushback by storing a 'Producer' in
-    a 'StateT' layer.
--}
-
-{-| Draw one element from the underlying 'Producer', returning 'Left' if the
-    'Producer' is empty
--}
-draw :: (Monad m) => StateT (Producer a m r) m (Either r a)
-draw = do
-    p <- S.get
-    x <- lift (next p)
-    case x of
-        Left   r      -> do
-            S.put (return r)
-            return (Left r)
-        Right (a, p') -> do
-            S.put p'
-            return (Right a)
-{-# INLINABLE draw #-}
-
-{-| Draw all elements from the underlying 'Producer'
-
-    Note that 'drawAll' is not an idiomatic use of @pipes-parse@, but I provide
-    it for simple testing purposes.  Idiomatic @pipes-parse@ style consumes the
-    elements immediately as they are generated instead of loading all elements
-    into memory.
--}
-drawAll :: (Monad m) => StateT (Producer a m r) m [a]
-drawAll = go id
-  where
-    go diffAs = do
-        ma <- draw
-        case ma of
-            Left  _ -> return (diffAs [])
-            Right a -> go (diffAs . (a:))
-{-# INLINABLE drawAll #-}
-
--- | Push back an element onto the underlying 'Producer'
-unDraw :: (Monad m) => a -> StateT (Producer a m r) m ()
-unDraw a = S.modify (yield a >>)
-{-# INLINABLE unDraw #-}
-
-{-| 'peek' checks the first element of the stream, but uses 'unDraw' to push the
-    element back so that it is available for the next 'draw' command.
-
-> peek = do
->     x <- draw
->     case x of
->         Left  _ -> return ()
->         Right a -> unDraw a
->     return x
--}
-peek :: (Monad m) => StateT (Producer a m r) m (Either r a)
-peek = do
-    x <- draw
-    case x of
-        Left  _ -> return ()
-        Right a -> unDraw a
-    return x
-{-# INLINABLE peek #-}
-
-{-| Check if the underlying 'Producer' is empty
-
-> isEndOfInput = liftM isLeft peek
--}
-isEndOfInput :: (Monad m) => StateT (Producer a m r) m Bool
-isEndOfInput = do
-    x <- peek
-    return (case x of
-        Left  _ -> True
-        Right _ -> False )
-{-# INLINABLE isEndOfInput #-}
 
 {- $reexports
     @Lens.Family2@ re-exports 'Lens'', ('^.') and 'over'.
