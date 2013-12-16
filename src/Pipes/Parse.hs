@@ -44,7 +44,6 @@ module Pipes.Parse (
     module Pipes
     ) where
 
-import Control.Foldl (Fold(Fold), FoldM(FoldM))
 import Control.Monad (join)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Free (
@@ -315,8 +314,14 @@ drops = go
 {-# INLINABLE drops #-}
 
 -- | Fold each 'Producer' of a 'FreeT' using a 'Fold'
-folds :: (Monad m) => Fold a b -> FreeT (Producer a m) m r -> Producer b m r
-folds (Fold step begin done) = go
+folds
+    :: (Monad m)
+    => (x -> a -> x)
+    -> x
+    -> (x -> b)
+    -> FreeT (Producer a m) m r
+    -> Producer b m r
+folds step begin done = go
   where
     go f = do
         x <- lift (runFreeT f)
@@ -336,8 +341,13 @@ folds (Fold step begin done) = go
 
 -- | Fold each 'Producer' of a 'FreeT' using a 'FoldM'
 foldsM
-    :: (Monad m) => FoldM m a b -> FreeT (Producer a m) m r -> Producer b m r
-foldsM (FoldM step begin done) = go
+    :: (Monad m)
+    => (x -> a -> m x)
+    -> m x
+    -> (x -> m b)
+    -> FreeT (Producer a m) m r
+    -> Producer b m r
+foldsM step begin done = go
   where
     go f = do
         y <- lift (runFreeT f)
