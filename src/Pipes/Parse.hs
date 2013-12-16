@@ -313,13 +313,17 @@ drops = go
                     runFreeT $ go (n-1) ft'
 {-# INLINABLE drops #-}
 
--- | Fold each 'Producer' of a 'FreeT' using a 'Fold'
+-- | Fold each 'Producer' of a 'FreeT'
 folds
     :: (Monad m)
     => (x -> a -> x)
+    -- ^ step function
     -> x
+    -- ^ initial accumulator
     -> (x -> b)
+    -- ^ final function
     -> FreeT (Producer a m) m r
+    -- ^
     -> Producer b m r
 folds step begin done = go
   where
@@ -339,13 +343,17 @@ folds step begin done = go
             Right (a, p') -> fold p' $! step x a
 {-# INLINABLE folds #-}
 
--- | Fold each 'Producer' of a 'FreeT' using a 'FoldM'
+-- | Fold each 'Producer' of a 'FreeT', monadically
 foldsM
     :: (Monad m)
     => (x -> a -> m x)
+    -- ^ step function
     -> m x
+    -- ^ initial accumulator
     -> (x -> m b)
+    -- ^ final function
     -> FreeT (Producer a m) m r
+    -- ^
     -> Producer b m r
 foldsM step begin done = go
   where
