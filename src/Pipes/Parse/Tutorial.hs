@@ -39,7 +39,8 @@ import Pipes.Parse
 
     * 'Parser's, which play a role analogous to 'Consumer's
 
-    * 'Lens''es between 'Producer's, which play a role analogous to 'Pipe's
+    * 'Lens.Family.Lens''es between 'Producer's, which play a role analogous to
+      'Pipe's
 
     There are four ways to connect these three abstractions:
 
@@ -51,24 +52,39 @@ import Pipes.Parse
 > execStateT :: Parser a m r -> Producer a m x -> m (   Producer a m x)
 
 
-    * Connect 'Lens''s to 'Parser'es using 'zoom'
+    * Connect 'Lens.Family.Lens''s to 'Parser'es using
+      'Lens.Family.State.Strict.zoom'
 
 > zoom :: Lens' (Producer a m x) (Producer b m y)
 >      -> Parser b m r
 >      -> Parser a m r
 
-    * Connect 'Producer's to 'Lens''es using 'view' or ('^.'):
+    * Connect 'Producer's to 'Lens.Family.Lens''es using 'Lens.Family.view' or
+      ('Lens.Family.^.'):
 
 > view, (^.)
 >     :: Producer a m x
 >     -> Lens' (Producer a m x) (Producer b m y)
 >     -> Producer b m y
 
-    * Connect 'Lens''es to 'Lens''es using ('.') (i.e. function composition):
+    * Connect 'Lens.Family.Lens''es to 'Lens.Family.Lens''es using ('.') (i.e.
+      function composition):
 
 > (.) :: Lens' (Producer a m x) (Producer b m y)
 >     -> Lens' (Producer b m y) (Producer c m z)
 >     -> Lens' (Producer a m x) (Producer c m z)
+
+    You can obtain the necessary lens utilities from either:
+    
+    * The @lens-family-core@ library, importing @Lens.Family@ (for
+      'Lens.Family.view' \/ ('Lens.Family.^.') and 'Lens.Family.over') and
+      @Lens.Family.State.Strict@ (for 'Lens.Family.State.Strict.zoom'), or:
+
+    * The @lens@ library, importing @Control.Lens@ (for 'Control.Lens.view' \/
+      ('Control.Lens.^.'), 'Control.Lens.over' and 'Control.Lens.zoom')
+
+    This tutorial uses @Lens.Family@ since it has fewer dependencies and simpler
+    types.
 -}
 
 {- $parsers
@@ -161,20 +177,22 @@ Just (1, 2)
     But what if you wanted to draw just the first three elements from an
     infinite stream?  This is what lenses are for:
 
+> import Lens.Family
+> import Lens.Family.State.Strict
 > import Pipes
 > import Pipes.Parse
 >
 > drawThree :: (Monad m) => Parser a m [a]
 > drawThree = zoom (splitsAt 3) drawAll
 
-    'zoom' lets you delimit a 'Parser' using a 'Lens'.  The above code says to
-    limit 'drawAll' to a subset of the input, in this case the first three
-    elements:
+    'Lens.Family.State.Strict.zoom' lets you delimit a 'Parser' using a
+    'Lens.Family.Lens'.  The above code says to limit 'drawAll' to a subset of
+    the input, in this case the first three elements:
 
 >>> evalStateT drawThree (each [1..])
 [1,2,3]
 
-    'splitsAt' is a 'Lens' with the following type:
+    'splitsAt' is a 'Lens.Family.Lens'' with the following type:
 
 > splitsAt
 >     :: (Monad m)
@@ -208,10 +226,10 @@ Just (1, 2)
 5
 6
 
-    'zoom' takes our lens a step further and uses it to limit our parser to the
-    outer 'Producer' (the first three elements).  When the parser is done 'zoom'
-    also returns unused elements back to the original stream.  We can
-    demonstrate this using the following example parser:
+    'Lens.Family.State.Strict.zoom' takes our lens a step further and uses it to
+    limit our parser to the outer 'Producer' (the first three elements).  When
+    the parser is done 'zoom' also returns unused elements back to the original
+    stream.  We can demonstrate this using the following example parser:
 
 > splitExample :: (Monad m) => Parser a m (Maybe a, [a])
 > splitExample = do
@@ -235,7 +253,7 @@ Just (1, 2)
 >>> evalStateT spanExample (each [1..])
 (Nothing,[1,2,3],Just 4)
 
-    You can even nest 'zoom's, too:
+    You can even nest 'Lens.Family.State.Strict.zoom's, too:
 
 > nestExample :: (Monad m) => Parser Int m (Maybe Int, [Int], Maybe Int)
 > nestExample = zoom (splitsAt 2) spanExample
@@ -243,25 +261,28 @@ Just (1, 2)
 >>> evalStateT nestExample (each [1..])
 (Nothing,[1,2],Nothing)
 
-    Note that 'zoom' nesting obeys the following two laws:
+    Note that 'Lens.Family.State.Strict.zoom' nesting obeys the following two
+    laws:
 
 > zoom lens1 . zoom lens2 = zoom (lens1 . lens2)
 >
 > zoom id = id
 
-    Also note that 'view' nesting obeys the following two laws:
+    Also note that 'Lens.Family.view' nesting obeys the following two laws:
 
 > view lens2 . view lens1 = view (lens1 . lens2)
 >
 > view id = id
 
-    Both the 'zoom' and 'view' laws are examples of functor laws, and they
-    ensure that it does not matter whether you prefer to connect lenses to each
-    other or directly to 'Producer's and 'Parser's.
+    Both the 'Lens.Family.State.Strict.zoom' and 'Lens.Family.view' laws are
+    examples of functor laws, and they ensure that it does not matter whether
+    you prefer to connect lenses to each other or directly to 'Producer's and
+    'Parser's.
 
     However, the lenses in this library are improper, meaning that they violate
-    certain lens laws.  The first consequence of this is that 'zoom' does not
-    obey the monad morphism laws for these lenses.  For example:
+    certain lens laws.  The first consequence of this is that
+    'Lens.Family.State.Strict.zoom' does not obey the monad morphism laws for
+    these lenses.  For example:
 
 > do x <- zoom (splitsAt 3) m  /=  zoom (splitsAt 3) $ do x <- m
 >    zoom (splitsAt 3) (f x)                              f x
@@ -329,6 +350,7 @@ Just (1, 2)
     that transforms a 'Producer' to keep only the first three groups of
     consecutive equal elements:
 
+> import Lens.Family
 > import Pipes.Parse
 >
 > threeGroups :: (Monad m, Eq a) => Producer a m () -> Producer a m ()
@@ -369,8 +391,8 @@ Just (1, 2)
 
 {- $conclusion
     @pipes-parse@ introduces core idioms for @pipes@-based parsing.  These
-    idioms reuse 'Producer's, but introduce two new abstractions: 'Lens''es and
-    'Parser's.
+    idioms reuse 'Producer's, but introduce two new abstractions:
+    'Lens.Family.Lens''es and 'Parser's.
 
     This library is very minimal and only contains datatype-agnostic parsing
     utilities, so this tutorial does not explore the full range of parsing
