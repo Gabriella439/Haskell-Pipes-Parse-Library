@@ -131,7 +131,8 @@ isEndOfInput = do
 {-# INLINABLE isEndOfInput #-}
 
 {-| 'spans' is an improper lens from a 'Producer' to two 'Producer's split using
-    the given predicate
+    the given predicate, where the outer 'Producer' is the longest consecutive
+    group of elements that satisfy the predicate
 
 > spans
 >     :: (Monad m)
