@@ -13,12 +13,12 @@ module Pipes.Parse (
     isEndOfInput,
 
     -- * Lenses
-    spans,
-    splitsAt,
+    span,
+    splitAt,
 
     -- * Splitters
-    groupsBy,
-    groups,
+    groupBy,
+    group,
     chunksOf,
 
     -- * Transformations
@@ -52,6 +52,8 @@ import Control.Monad.Trans.State.Strict (
 import Data.Functor.Constant (Constant(Constant, getConstant))
 import Pipes (Producer, yield, next)
 import qualified Pipes as P
+
+import Prelude hiding (span, splitAt)
 
 {- $parser
     @pipes-parse@ handles end-of-input and pushback by storing a 'Producer' in
@@ -130,15 +132,15 @@ isEndOfInput = do
         Just _  -> False )
 {-# INLINABLE isEndOfInput #-}
 
-{-| 'spans' is an improper lens from a 'Producer' to two 'Producer's split using
+{-| 'span' is an improper lens from a 'Producer' to two 'Producer's split using
     the given predicate, where the outer 'Producer' is the longest consecutive
     group of elements that satisfy the predicate
 
-> spans
+> span
 >     :: (Monad m)
 >     => (a -> Bool) -> Lens' (Producer a m x) (Producer a m (Producer a m x))
 -}
-spans
+span
     :: (Functor f, Monad m)
     => (a -> Bool)
     -- ^
@@ -146,7 +148,7 @@ spans
     -- ^
     -> (Producer a m               x  -> f (Producer a m               x ))
     -- ^
-spans predicate k p0 = fmap join (k (to p0))
+span predicate k p0 = fmap join (k (to p0))
   where
 --  to :: (Monad m) => Producer a m r -> Producer a m (Producer a m r)
     to p = do
@@ -159,16 +161,16 @@ spans predicate k p0 = fmap join (k (to p0))
                     yield a
                     to p'
                 else return (yield a >> p')
-{-# INLINABLE spans #-}
+{-# INLINABLE span #-}
 
-{-| 'splitsAt' is an improper lens from a 'Producer' to two 'Producer's split
+{-| 'splitAt' is an improper lens from a 'Producer' to two 'Producer's split
     after the given number of elements
 
-> splitsAt
+> splitAt
 >     :: (Monad m)
 >     => Int -> Lens' (Producer a m x) (Producer a m (Producer a m x))
 -}
-splitsAt
+splitAt
     :: (Functor f, Monad m)
     => Int
     -- ^
@@ -176,7 +178,7 @@ splitsAt
     -- ^
     -> (Producer a m               x  -> f (Producer a m               x ))
     -- ^
-splitsAt n0 k p0 = fmap join (k (to n0 p0))
+splitAt n0 k p0 = fmap join (k (to n0 p0))
   where
 --  to :: (Monad m) => Int -> Producer a m r -> Producer a m (Producer a m r)
     to n p =
@@ -189,7 +191,7 @@ splitsAt n0 k p0 = fmap join (k (to n0 p0))
                 Right (a, p') -> do
                     yield a
                     to (n - 1) p'
-{-# INLINABLE splitsAt #-}
+{-# INLINABLE splitAt #-}
 
 (^.) :: a -> ((b -> Constant b b) -> (a -> Constant b a)) -> b
 a ^. lens = getConstant (lens Constant a)
@@ -197,11 +199,11 @@ a ^. lens = getConstant (lens Constant a)
 {-| 'groupBy' is an improper lens from a 'Producer' to a 'FreeT' of 'Producer's
     grouped using the given equality predicate
 
-> groupsBy
+> groupBy
 >     :: (Monad m)
 >     => (a -> a -> Bool) -> Lens' (Producer a m x) (FreeT (Producer a m) m x)
 -}
-groupsBy
+groupBy
     :: (Functor f, Monad m)
     => (a -> a -> Bool)
     -- ^
@@ -209,7 +211,7 @@ groupsBy
     -- ^
     -> (       Producer a m    x -> f (       Producer a m    x))
     -- ^
-groupsBy equals k p0 = fmap concats (k (to p0))
+groupBy equals k p0 = fmap concats (k (to p0))
   where
 --  to :: (Monad m) => Producer a m r -> FreeT (Producer a m) m r
     to p = FreeT $ do
@@ -217,22 +219,22 @@ groupsBy equals k p0 = fmap concats (k (to p0))
         return $ case x of
             Left   r      -> Pure r
             Right (a, p') -> Free $ do
-	        p'' <- (yield a >> p')^.spans (equals a)
+	        p'' <- (yield a >> p')^.span (equals a)
 		return $ to p''
-{-# INLINABLE groupsBy #-}
+{-# INLINABLE groupBy #-}
 
-{-| Like 'groupsBy', where the equality predicate is ('==')
+{-| Like 'groupBy', where the equality predicate is ('==')
 
-> groups :: (Monad m, Eq a) => Lens' (Producer a m x) (FreeT (Producer a m) m x)
+> group :: (Monad m, Eq a) => Lens' (Producer a m x) (FreeT (Producer a m) m x)
 -}
-groups
+group
     :: (Functor f, Monad m, Eq a)
     => (FreeT (Producer a m) m x -> f (FreeT (Producer a m) m x))
     -- ^
     -> (       Producer a m    x -> f (       Producer a m    x))
     -- ^
-groups = groupsBy (==)
-{-# INLINABLE groups #-}
+group = groupBy (==)
+{-# INLINABLE group #-}
 
 {-| 'chunksOf' is an improper lens from a 'Producer' to a 'FreeT' of 'Producer's
     of fixed length
@@ -256,7 +258,7 @@ chunksOf n0 k p0 = fmap concats (k (to p0))
         return $ case x of
             Left   r      -> Pure r
             Right (a, p') -> Free $ do
-                p'' <- (yield a >> p')^.splitsAt n0
+                p'' <- (yield a >> p')^.splitAt n0
                 return (to p'')
 {-# INLINABLE chunksOf #-}
 

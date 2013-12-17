@@ -182,8 +182,10 @@ Just (1, 2)
 > import Pipes
 > import Pipes.Parse
 >
+> import Prelude hiding (splitAt, span)
+>
 > drawThree :: (Monad m) => Parser a m [a]
-> drawThree = zoom (splitsAt 3) drawAll
+> drawThree = zoom (splitAt 3) drawAll
 
     'Lens.Family.State.Strict.zoom' lets you delimit a 'Parser' using a
     'Lens.Family.Lens'.  The above code says to limit 'drawAll' to a subset of
@@ -192,26 +194,26 @@ Just (1, 2)
 >>> evalStateT drawThree (each [1..])
 [1,2,3]
 
-    'splitsAt' is a 'Lens.Family.Lens'' with the following type:
+    'splitAt' is a 'Lens.Family.Lens'' with the following type:
 
-> splitsAt
+> splitAt
 >     :: (Monad m)
 >     => Int -> Lens' (Producer a m x) (Producer a m (Producer a m x))
 
-    The easiest way to understand 'splitsAt' is to study what happens when you
+    The easiest way to understand 'splitAt' is to study what happens when you
     use it as a getter:
 
-> view (splitsAt 3) :: Producer a m x -> Producer a m (Producer a m x) 
+> view (splitAt 3) :: Producer a m x -> Producer a m (Producer a m x) 
 
-    In this context, @(splitsAt 3)@ behaves like 'splitAt' from the Prelude,
+    In this context, @(splitAt 3)@ behaves like 'splitAt' from the Prelude,
     except instead of splitting a list it splits a 'Producer'.  The outer
     'Producer' contains up to 3 elements and the inner 'Producer' contains the
     remainder of the elements.
 
 > outer :: (Monad m) => Producer Int m (Producer Int m ())
-> outer = view (splitsAt 3) (each [1..6])
+> outer = view (splitAt 3) (each [1..6])
 >
-> -- or: outer = each [1..6]^.splitsAt 3
+> -- or: outer = each [1..6]^.splitAt 3
 >
 > -- or: outer = do
 > --     each [1..3]
@@ -233,21 +235,21 @@ Just (1, 2)
 
 > splitExample :: (Monad m) => Parser a m (Maybe a, [a])
 > splitExample = do
->     x <- zoom (splitsAt 3) draw
->     y <- zoom (splitsAt 3) drawAll
+>     x <- zoom (splitAt 3) draw
+>     y <- zoom (splitAt 3) drawAll
 >     return (x, y)
 
 >>> evalStateT splitExample (each [1..])
 (Just 1,[2,3,4])
 
-    'spans' behaves the same way, except that it uses a predicate and takes as
+    'span' behaves the same way, except that it uses a predicate and takes as
     many consecutive elements as possible that satisfy the predicate:
 
 > spanExample :: (Monad m) => Parser Int m (Maybe Int, [Int], Maybe Int)
 > spanExample = do
->     x <- zoom (spans (>= 4)) draw
->     y <- zoom (spans (<  4)) drawAll
->     z <- zoom (spans (>= 4)) draw
+>     x <- zoom (span (>= 4)) draw
+>     y <- zoom (span (<  4)) drawAll
+>     z <- zoom (span (>= 4)) draw
 >     return (x, y, z)
 
 >>> evalStateT spanExample (each [1..])
@@ -256,7 +258,7 @@ Just (1, 2)
     You can even nest 'Lens.Family.State.Strict.zoom's, too:
 
 > nestExample :: (Monad m) => Parser Int m (Maybe Int, [Int], Maybe Int)
-> nestExample = zoom (splitsAt 2) spanExample
+> nestExample = zoom (splitAt 2) spanExample
 
 >>> evalStateT nestExample (each [1..])
 (Nothing,[1,2],Nothing)
@@ -284,8 +286,8 @@ Just (1, 2)
     'Lens.Family.State.Strict.zoom' does not obey the monad morphism laws for
     these lenses.  For example:
 
-> do x <- zoom (splitsAt 3) m  /=  zoom (splitsAt 3) $ do x <- m
->    zoom (splitsAt 3) (f x)                              f x
+> do x <- zoom (splitAt 3) m  /=  zoom (splitAt 3) $ do x <- m
+>    zoom (splitAt 3) (f x)                             f x
 
     The second consequence is that these lenses cannot always be used as
     setters.  For example:
@@ -294,7 +296,7 @@ Just (1, 2)
 >     each [1, 2]
 >     return $ each [3, 4]
 >
-> p2 = view (splitsAt 1) (set (splitsAt 1) p (return ()))
+> p2 = view (splitAt 1) (set (splitAt 1) p (return ()))
 >
 > -- p2 = do
 > --     yield 1
@@ -330,11 +332,11 @@ Just (1, 2)
 > -- A "joiner"
 > FreeT (Producer a m) m () -> Producer a m ()            ~  [[a]] ->  [a]
 
-    An example splitter is @(view groups)@, which splits a 'Producer' into
+    An example splitter is @(view group)@, which splits a 'Producer' into
     'FreeT'-delimited 'Producer's, one for each group of consecutive equal
     elements:
 
-> view groups :: (Eq a, Monad m) => Producer a m x -> FreeT (Producer a m) m x
+> view group :: (Eq a, Monad m) => Producer a m x -> FreeT (Producer a m) m x
 
     An example transformation is @(takes 3)@, which takes the first three
     'Producer's from a 'FreeT' and drops the rest:
@@ -354,7 +356,7 @@ Just (1, 2)
 > import Pipes.Parse
 >
 > threeGroups :: (Monad m, Eq a) => Producer a m () -> Producer a m ()
-> threeGroups = concats . takes 3 . view groups
+> threeGroups = concats . takes 3 . view group
 
     Both splitting and joining preserve the streaming nature of 'Producer's and
     do not collect or buffer any values.  The transformed 'Producer' still
@@ -377,12 +379,12 @@ Just (1, 2)
 4<Enter>
 >>> -- Note that the 4 is not echoed
 
-    Also, lenses simplify things even further.  The reason that 'groups' is a
+    Also, lenses simplify things even further.  The reason that 'group' is a
     lens is because it actually packages both a splitter and joiner into a
     single package.  We can then use 'over' to handle both the splitting and
     joining for us:
 
->>> runEffect $ over groups (takes 3) P.stdinLn >-> P.stdoutLn
+>>> runEffect $ over group (takes 3) P.stdinLn >-> P.stdoutLn
 
     This gives the exact same behavior because 'over' takes care of calling the
     splitter before applying the transformation, then calling the joiner
@@ -401,9 +403,9 @@ Just (1, 2)
 
     'Parser's are very straightforward to write, but lenses are more
     sophisticated.  If you are interested in writing your own custom lenses,
-    study the implementation of 'splitsAt'.
+    study the implementation of 'splitAt'.
 
-    'FreeT' requires even greater sophistication.  Study how 'groupsBy' works to
+    'FreeT' requires even greater sophistication.  Study how 'groupBy' works to
     learn how to use 'FreeT' to introduce boundaries in a stream of 'Producer's.
     You can then use 'FreeT' to create your own custom splitters.
 
