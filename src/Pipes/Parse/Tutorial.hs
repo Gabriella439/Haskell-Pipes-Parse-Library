@@ -62,9 +62,9 @@ import Pipes.Parse
     * Connect 'Producer's to 'Lens.Family.Lens''es using 'Lens.Family.view' or
       ('Lens.Family.^.'):
 
-> view, (^.)
->     :: Producer a m x
->     -> Lens' (Producer a m x) (Producer b m y)
+> view
+>     :: Lens' (Producer a m x) (Producer b m y)
+>     -> Producer a m x
 >     -> Producer b m y
 
     * Connect 'Lens.Family.Lens''es to 'Lens.Family.Lens''es using ('.') (i.e.
