@@ -11,6 +11,8 @@ module Pipes.Parse (
     unDraw,
     peek,
     isEndOfInput,
+    foldAll,
+    foldMAll,
 
     -- * Lenses
     span,
@@ -131,6 +133,32 @@ isEndOfInput = do
         Nothing -> True
         Just _  -> False )
 {-# INLINABLE isEndOfInput #-}
+
+-- | Fold all input values
+foldAll :: (Monad m) => (x -> a -> x) -> x -> (x -> b) -> Parser a m b
+foldAll step begin done = go begin
+  where
+    go x = do
+        ma <- draw
+        case ma of
+            Nothing -> return (done x)
+            Just a  -> go $! step x a
+{-# INLINABLE foldAll #-}
+
+-- | Fold all input values monadically
+foldMAll :: (Monad m) => (x -> a -> m x) -> m x -> (x -> m b) -> Parser a m b
+foldMAll step begin done = do
+    x0 <- lift begin
+    go x0
+  where
+    go x = do
+        ma <- draw
+        case ma of
+            Nothing -> lift (done x)
+            Just a  -> do
+                x' <- lift (step x a)
+                go $! x'
+{-# INLINABLE foldMAll #-}
 
 {-| 'span' is an improper lens from a 'Producer' to two 'Producer's split using
     the given predicate, where the outer 'Producer' is the longest consecutive
