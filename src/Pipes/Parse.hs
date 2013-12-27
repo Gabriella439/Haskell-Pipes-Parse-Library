@@ -135,7 +135,15 @@ isEndOfInput = do
 {-# INLINABLE isEndOfInput #-}
 
 -- | Fold all input values
-foldAll :: (Monad m) => (x -> a -> x) -> x -> (x -> b) -> Parser a m b
+foldAll 
+    :: (Monad m)
+    => (x -> a -> x)
+    -- ^ Step function
+    -> x
+    -- ^ Initial accumulator
+    -> (x -> b)
+    -- ^ Extraction function
+    -> Parser a m b
 foldAll step begin done = go begin
   where
     go x = do
@@ -146,7 +154,15 @@ foldAll step begin done = go begin
 {-# INLINABLE foldAll #-}
 
 -- | Fold all input values monadically
-foldMAll :: (Monad m) => (x -> a -> m x) -> m x -> (x -> m b) -> Parser a m b
+foldMAll
+    :: (Monad m)
+    => (x -> a -> m x)
+    -- ^ Step function
+    -> m x
+    -- ^ Initial accumulator
+    -> (x -> m b)
+    -- ^ Extraction function
+    -> Parser a m b
 foldMAll step begin done = do
     x0 <- lift begin
     go x0
@@ -392,11 +408,11 @@ drops = go
 folds
     :: (Monad m)
     => (x -> a -> x)
-    -- ^ step function
+    -- ^ Step function
     -> x
-    -- ^ initial accumulator
+    -- ^ Initial accumulator
     -> (x -> b)
-    -- ^ final function
+    -- ^ Extraction function
     -> FreeT (Producer a m) m r
     -- ^
     -> Producer b m r
@@ -422,11 +438,11 @@ folds step begin done = go
 foldsM
     :: (Monad m)
     => (x -> a -> m x)
-    -- ^ step function
+    -- ^ Step function
     -> m x
-    -- ^ initial accumulator
+    -- ^ Initial accumulator
     -> (x -> m b)
-    -- ^ final function
+    -- ^ Extraction function
     -> FreeT (Producer a m) m r
     -- ^
     -> Producer b m r
