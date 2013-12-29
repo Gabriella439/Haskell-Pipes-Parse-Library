@@ -7,7 +7,9 @@ module Pipes.Parse (
     -- $parser
     Parser,
     draw,
+    skip,
     drawAll,
+    skipAll,
     unDraw,
     peek,
     isEndOfInput,
@@ -81,6 +83,17 @@ draw = do
             return (Just a)
 {-# INLINABLE draw #-}
 
+{-| Skip one element from the underlying 'Producer', returning 'True' if
+    successful or 'False' if the 'Producer' is empty
+-}
+skip :: (Monad m) => Parser a m Bool
+skip = do
+    ma <- draw
+    return $ case ma of
+        Nothing -> False
+        Just _  -> True
+{-# INLINABLE skip #-}
+
 {-| Draw all elements from the underlying 'Producer'
 
     Note that 'drawAll' is not an idiomatic use of @pipes-parse@, but I provide
@@ -97,6 +110,17 @@ drawAll = go id
             Nothing -> return (diffAs [])
             Just a  -> go (diffAs . (a:))
 {-# INLINABLE drawAll #-}
+
+-- | Drain all elements from the underlying 'Producer'
+skipAll :: (Monad m) => Parser a m ()
+skipAll = go
+  where
+    go = do
+        ma <- draw
+        case ma of
+            Nothing -> return ()
+            Just _  -> go
+{-# INLINABLE skipAll #-}
 
 -- | Push back an element onto the underlying 'Producer'
 unDraw :: (Monad m) => a -> Parser a m ()
