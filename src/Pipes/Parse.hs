@@ -65,33 +65,33 @@ import Prelude hiding (span, splitAt)
 -}
 
 -- | A 'Parser' is an action that reads from and writes to a stored 'Producer'
-type Parser a m r = forall x . StateT (Producer a m x) m r
+type Parser e a m = StateT (Producer a m e) m
 
-{-| Draw one element from the underlying 'Producer', returning 'Nothing' if the
+{-| Draw one element from the underlying 'Producer', returning 'Left' if the
     'Producer' is empty
 -}
-draw :: (Monad m) => Parser a m (Maybe a)
+draw :: (Monad m) => Parser e a m (Either e a)
 draw = do
     p <- S.get
     x <- lift (next p)
     case x of
-        Left   r      -> do
-            S.put (return r)
-            return Nothing
+        Left   e      -> do
+            S.put (return e)
+            return (Left e)
         Right (a, p') -> do
             S.put p'
-            return (Just a)
+            return (Right a)
 {-# INLINABLE draw #-}
 
 {-| Skip one element from the underlying 'Producer', returning 'True' if
     successful or 'False' if the 'Producer' is empty
 -}
-skip :: (Monad m) => Parser a m Bool
+skip :: (Monad m) => Parser e a m Bool
 skip = do
-    ma <- draw
-    return $ case ma of
-        Nothing -> False
-        Just _  -> True
+    x <- draw
+    return $ case x of
+        Left  _ -> False
+        Right _ -> True
 {-# INLINABLE skip #-}
 
 {-| Draw all elements from the underlying 'Producer'
@@ -101,29 +101,29 @@ skip = do
     elements immediately as they are generated instead of loading all elements
     into memory.
 -}
-drawAll :: (Monad m) => Parser a m [a]
+drawAll :: (Monad m) => Parser e a m [a]
 drawAll = go id
   where
     go diffAs = do
-        ma <- draw
-        case ma of
-            Nothing -> return (diffAs [])
-            Just a  -> go (diffAs . (a:))
+        x <- draw
+        case x of
+            Left  _ -> return (diffAs [])
+            Right a -> go (diffAs . (a:))
 {-# INLINABLE drawAll #-}
 
 -- | Drain all elements from the underlying 'Producer'
-skipAll :: (Monad m) => Parser a m ()
+skipAll :: (Monad m) => Parser e a m ()
 skipAll = go
   where
     go = do
-        ma <- draw
-        case ma of
-            Nothing -> return ()
-            Just _  -> go
+        x <- draw
+        case x  of
+            Left  _ -> return ()
+            Right _ -> go
 {-# INLINABLE skipAll #-}
 
 -- | Push back an element onto the underlying 'Producer'
-unDraw :: (Monad m) => a -> Parser a m ()
+unDraw :: (Monad m) => a -> Parser e a m ()
 unDraw a = S.modify (yield a >>)
 {-# INLINABLE unDraw #-}
 
@@ -133,29 +133,29 @@ unDraw a = S.modify (yield a >>)
 > peek = do
 >     x <- draw
 >     case x of
->         Nothing -> return ()
->         Just  a -> unDraw a
+>         Left  _ -> return ()
+>         Right a -> unDraw a
 >     return x
 -}
-peek :: (Monad m) => Parser a m (Maybe a)
+peek :: (Monad m) => Parser e a m (Either e a)
 peek = do
     x <- draw
     case x of
-        Nothing -> return ()
-        Just a  -> unDraw a
+        Left  _ -> return ()
+        Right a -> unDraw a
     return x
 {-# INLINABLE peek #-}
 
 {-| Check if the underlying 'Producer' is empty
 
-> isEndOfInput = fmap isNothing peek
+> isEndOfInput = fmap isRight peek
 -}
-isEndOfInput :: (Monad m) => Parser a m Bool
+isEndOfInput :: (Monad m) => Parser e a m Bool
 isEndOfInput = do
     x <- peek
     return (case x of
-        Nothing -> True
-        Just _  -> False )
+        Left  _ -> True
+        Right _ -> False )
 {-# INLINABLE isEndOfInput #-}
 
 -- | Fold all input values
@@ -167,14 +167,14 @@ foldAll
     -- ^ Initial accumulator
     -> (x -> b)
     -- ^ Extraction function
-    -> Parser a m b
+    -> Parser e a m b
 foldAll step begin done = go begin
   where
     go x = do
-        ma <- draw
-        case ma of
-            Nothing -> return (done x)
-            Just a  -> go $! step x a
+        ea <- draw
+        case ea of
+            Left  _ -> return (done x)
+            Right a -> go $! step x a
 {-# INLINABLE foldAll #-}
 
 -- | Fold all input values monadically
@@ -186,16 +186,16 @@ foldAllM
     -- ^ Initial accumulator
     -> (x -> m b)
     -- ^ Extraction function
-    -> Parser a m b
+    -> Parser e a m b
 foldAllM step begin done = do
     x0 <- lift begin
     go x0
   where
     go x = do
-        ma <- draw
-        case ma of
-            Nothing -> lift (done x)
-            Just a  -> do
+        ea <- draw
+        case ea of
+            Left  _ -> lift (done x)
+            Right a -> do
                 x' <- lift (step x a)
                 go $! x'
 {-# INLINABLE foldAllM #-}
@@ -206,19 +206,19 @@ foldAllM step begin done = do
 
 > span
 >     :: (Monad m)
->     => (a -> Bool) -> Lens' (Producer a m x) (Producer a m (Producer a m x))
+>     => (a -> Bool) -> Lens' (Producer a m e) (Producer a m (Producer a m e))
 -}
 span
     :: (Functor f, Monad m)
     => (a -> Bool)
     -- ^
-    -> (Producer a m (Producer a m x) -> f (Producer a m (Producer a m x)))
+    -> (Producer a m (Producer a m e) -> f (Producer a m (Producer a m e)))
     -- ^
-    -> (Producer a m               x  -> f (Producer a m               x ))
+    -> (Producer a m               e  -> f (Producer a m               e ))
     -- ^
 span predicate k p0 = fmap join (k (to p0))
   where
---  to :: (Monad m) => Producer a m r -> Producer a m (Producer a m r)
+--  to :: (Monad m) => Producer a m e -> Producer a m (Producer a m e)
     to p = do
         x <- lift (next p)
         case x of
@@ -236,19 +236,19 @@ span predicate k p0 = fmap join (k (to p0))
 
 > splitAt
 >     :: (Monad m)
->     => Int -> Lens' (Producer a m x) (Producer a m (Producer a m x))
+>     => Int -> Lens' (Producer a m e) (Producer a m (Producer a m e))
 -}
 splitAt
     :: (Functor f, Monad m)
     => Int
     -- ^
-    -> (Producer a m (Producer a m x) -> f (Producer a m (Producer a m x)))
+    -> (Producer a m (Producer a m e) -> f (Producer a m (Producer a m e)))
     -- ^
-    -> (Producer a m               x  -> f (Producer a m               x ))
+    -> (Producer a m               e  -> f (Producer a m               e ))
     -- ^
 splitAt n0 k p0 = fmap join (k (to n0 p0))
   where
---  to :: (Monad m) => Int -> Producer a m r -> Producer a m (Producer a m r)
+--  to :: (Monad m) => Int -> Producer a m e -> Producer a m (Producer a m e)
     to n p =
         if (n <= 0)
         then return p
@@ -269,15 +269,15 @@ a ^. lens = getConstant (lens Constant a)
 
 > groupBy
 >     :: (Monad m)
->     => (a -> a -> Bool) -> Lens' (Producer a m x) (FreeT (Producer a m) m x)
+>     => (a -> a -> Bool) -> Lens' (Producer a m e) (FreeT (Producer a m) m e)
 -}
 groupBy
     :: (Functor f, Monad m)
     => (a -> a -> Bool)
     -- ^
-    -> (FreeT (Producer a m) m x -> f (FreeT (Producer a m) m x))
+    -> (FreeT (Producer a m) m e -> f (FreeT (Producer a m) m e))
     -- ^
-    -> (       Producer a m    x -> f (       Producer a m    x))
+    -> (       Producer a m    e -> f (       Producer a m    e))
     -- ^
 groupBy equals k p0 = fmap concats (k (to p0))
   where
@@ -293,13 +293,13 @@ groupBy equals k p0 = fmap concats (k (to p0))
 
 {-| Like 'groupBy', where the equality predicate is ('==')
 
-> group :: (Monad m, Eq a) => Lens' (Producer a m x) (FreeT (Producer a m) m x)
+> group :: (Monad m, Eq a) => Lens' (Producer a m e) (FreeT (Producer a m) m e)
 -}
 group
     :: (Functor f, Monad m, Eq a)
-    => (FreeT (Producer a m) m x -> f (FreeT (Producer a m) m x))
+    => (FreeT (Producer a m) m e -> f (FreeT (Producer a m) m e))
     -- ^
-    -> (       Producer a m    x -> f (       Producer a m    x))
+    -> (       Producer a m    e -> f (       Producer a m    e))
     -- ^
 group = groupBy (==)
 {-# INLINABLE group #-}
@@ -308,19 +308,19 @@ group = groupBy (==)
     of fixed length
 
 > chunksOf
->     :: (Monad m) => Int -> Lens' (Producer a m x) (FreeT (Producer a m) m x)
+>     :: (Monad m) => Int -> Lens' (Producer a m e) (FreeT (Producer a m) m e)
 -}
 chunksOf
     :: (Functor f, Monad m)
     => Int
     -- ^
-    -> (FreeT (Producer a m) m x -> f (FreeT (Producer a m) m x))
+    -> (FreeT (Producer a m) m e -> f (FreeT (Producer a m) m e))
     -- ^
-    -> (       Producer a m    x -> f (       Producer a m    x))
+    -> (       Producer a m    e -> f (       Producer a m    e))
     -- ^
 chunksOf n0 k p0 = fmap concats (k (to p0))
   where
---  to :: (Monad m) => Producer a m r -> FreeT (Producer a m) m r
+--  to :: (Monad m) => Producer a m e -> FreeT (Producer a m) m e
     to p = FreeT $ do
         x <- next p
         return $ case x of
@@ -331,7 +331,7 @@ chunksOf n0 k p0 = fmap concats (k (to p0))
 {-# INLINABLE chunksOf #-}
 
 -- | Join a 'FreeT'-delimited stream of 'Producer's into a single 'Producer'
-concats :: (Monad m) => FreeT (Producer a m) m x -> Producer a m x
+concats :: (Monad m) => FreeT (Producer a m) m e -> Producer a m e
 concats = go
   where
     go f = do
@@ -348,7 +348,7 @@ concats = go
 -}
 intercalate
     :: (Monad m)
-    => Producer a m () -> FreeT (Producer a m) m x -> Producer a m x
+    => Producer a m () -> FreeT (Producer a m) m e -> Producer a m e
 intercalate sep = go0
   where
     go0 f = do
@@ -388,7 +388,7 @@ takes = go
     to preserve the return value.
 -}
 takes'
-    :: (Monad m) => Int -> FreeT (Producer a m) m x -> FreeT (Producer a m) m x
+    :: (Monad m) => Int -> FreeT (Producer a m) m e -> FreeT (Producer a m) m e
 takes' = go0
   where
     go0 n f = FreeT $
@@ -414,7 +414,7 @@ takes' = go0
     layers, just discarding everything they produce.
 -}
 drops
-    :: (Monad m) => Int -> FreeT (Producer a m) m x -> FreeT (Producer a m) m x
+    :: (Monad m) => Int -> FreeT (Producer a m) m e -> FreeT (Producer a m) m e
 drops = go
   where
     go n ft
@@ -437,9 +437,9 @@ folds
     -- ^ Initial accumulator
     -> (x -> b)
     -- ^ Extraction function
-    -> FreeT (Producer a m) m r
+    -> FreeT (Producer a m) m e
     -- ^
-    -> Producer b m r
+    -> Producer b m e
 folds step begin done = go
   where
     go f = do
@@ -467,9 +467,9 @@ foldsM
     -- ^ Initial accumulator
     -> (x -> m b)
     -- ^ Extraction function
-    -> FreeT (Producer a m) m r
+    -> FreeT (Producer a m) m e
     -- ^
-    -> Producer b m r
+    -> Producer b m e
 foldsM step begin done = go
   where
     go f = do
