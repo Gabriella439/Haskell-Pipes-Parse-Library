@@ -17,8 +17,6 @@ module Pipes.Parse (
     -- * Lenses
     span,
     splitAt,
-
-    -- * Splitters
     groupBy,
     group,
     chunksOf,
@@ -41,6 +39,7 @@ module Pipes.Parse (
     module Control.Monad.Trans.Class,
     module Control.Monad.Trans.Free,
     module Control.Monad.Trans.State.Strict,
+    module Lens.Family2,
     module Pipes
     ) where
 
@@ -52,6 +51,7 @@ import qualified Control.Monad.Trans.State.Strict as S
 import Control.Monad.Trans.State.Strict (
     StateT(StateT, runStateT), evalStateT, execStateT )
 import Data.Functor.Constant (Constant(Constant, getConstant))
+import Lens.Family2 (LensLike, LensLike', Lens')
 import Pipes (Producer, yield, next)
 import qualified Pipes as P
 
@@ -148,7 +148,7 @@ peek = do
 
 {-| Check if the underlying 'Producer' is empty
 
-> isEndOfInput = fmap isRight peek
+> isEndOfInput = fmap isLeft peek
 -}
 isEndOfInput :: (Monad m) => Parser e a m Bool
 isEndOfInput = do
@@ -203,19 +203,10 @@ foldAllM step begin done = do
 {-| 'span' is an improper lens from a 'Producer' to two 'Producer's split using
     the given predicate, where the outer 'Producer' is the longest consecutive
     group of elements that satisfy the predicate
-
-> span
->     :: (Monad m)
->     => (a -> Bool) -> Lens' (Producer a m e) (Producer a m (Producer a m e))
 -}
 span
-    :: (Functor f, Monad m)
-    => (a -> Bool)
-    -- ^
-    -> (Producer a m (Producer a m e) -> f (Producer a m (Producer a m e)))
-    -- ^
-    -> (Producer a m               e  -> f (Producer a m               e ))
-    -- ^
+    :: (Monad m)
+    => (a -> Bool) -> Lens' (Producer a m e) (Producer a m (Producer a m e))
 span predicate k p0 = fmap join (k (to p0))
   where
 --  to :: (Monad m) => Producer a m e -> Producer a m (Producer a m e)
@@ -233,19 +224,10 @@ span predicate k p0 = fmap join (k (to p0))
 
 {-| 'splitAt' is an improper lens from a 'Producer' to two 'Producer's split
     after the given number of elements
-
-> splitAt
->     :: (Monad m)
->     => Int -> Lens' (Producer a m e) (Producer a m (Producer a m e))
 -}
 splitAt
-    :: (Functor f, Monad m)
-    => Int
-    -- ^
-    -> (Producer a m (Producer a m e) -> f (Producer a m (Producer a m e)))
-    -- ^
-    -> (Producer a m               e  -> f (Producer a m               e ))
-    -- ^
+    :: (Monad m)
+    => Int -> Lens' (Producer a m e) (Producer a m (Producer a m e))
 splitAt n0 k p0 = fmap join (k (to n0 p0))
   where
 --  to :: (Monad m) => Int -> Producer a m e -> Producer a m (Producer a m e)
@@ -266,19 +248,10 @@ a ^. lens = getConstant (lens Constant a)
 
 {-| 'groupBy' is an improper lens from a 'Producer' to a 'FreeT' of 'Producer's
     grouped using the given equality predicate
-
-> groupBy
->     :: (Monad m)
->     => (a -> a -> Bool) -> Lens' (Producer a m e) (FreeT (Producer a m) m e)
 -}
 groupBy
-    :: (Functor f, Monad m)
-    => (a -> a -> Bool)
-    -- ^
-    -> (FreeT (Producer a m) m e -> f (FreeT (Producer a m) m e))
-    -- ^
-    -> (       Producer a m    e -> f (       Producer a m    e))
-    -- ^
+    :: (Monad m)
+    => (a -> a -> Bool) -> Lens' (Producer a m e) (FreeT (Producer a m) m e)
 groupBy equals k p0 = fmap concats (k (to p0))
   where
 --  to :: (Monad m) => Producer a m r -> FreeT (Producer a m) m r
@@ -291,33 +264,16 @@ groupBy equals k p0 = fmap concats (k (to p0))
 		return $ to p''
 {-# INLINABLE groupBy #-}
 
-{-| Like 'groupBy', where the equality predicate is ('==')
-
-> group :: (Monad m, Eq a) => Lens' (Producer a m e) (FreeT (Producer a m) m e)
--}
-group
-    :: (Functor f, Monad m, Eq a)
-    => (FreeT (Producer a m) m e -> f (FreeT (Producer a m) m e))
-    -- ^
-    -> (       Producer a m    e -> f (       Producer a m    e))
-    -- ^
+-- | Like 'groupBy', where the equality predicate is ('==')
+group :: (Monad m, Eq a) => Lens' (Producer a m e) (FreeT (Producer a m) m e)
 group = groupBy (==)
 {-# INLINABLE group #-}
 
 {-| 'chunksOf' is an improper lens from a 'Producer' to a 'FreeT' of 'Producer's
     of fixed length
-
-> chunksOf
->     :: (Monad m) => Int -> Lens' (Producer a m e) (FreeT (Producer a m) m e)
 -}
 chunksOf
-    :: (Functor f, Monad m)
-    => Int
-    -- ^
-    -> (FreeT (Producer a m) m e -> f (FreeT (Producer a m) m e))
-    -- ^
-    -> (       Producer a m    e -> f (       Producer a m    e))
-    -- ^
+    :: (Monad m) => Int -> Lens' (Producer a m e) (FreeT (Producer a m) m e)
 chunksOf n0 k p0 = fmap concats (k (to p0))
   where
 --  to :: (Monad m) => Producer a m e -> FreeT (Producer a m) m e
@@ -501,6 +457,8 @@ foldsM step begin done = go
 
     @Control.Monad.Trans.State.Strict@ re-exports 'StateT', 'runStateT',
     'evalStateT', and 'execStateT'.
+
+    @Lens.Family2@ re-exports 'Lens'', 'LensLike'', and 'LensLike'
 
     @Pipes@ re-exports 'Producer', 'yield', and 'next'.
 -}
