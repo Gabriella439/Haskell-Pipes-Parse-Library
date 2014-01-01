@@ -1,7 +1,5 @@
 -- | Element-agnostic parsing utilities for @pipes@
 
-{-# LANGUAGE RankNTypes #-}
-
 module Pipes.Parse (
     -- * Parsers
     -- $parser
