@@ -48,16 +48,16 @@ import Pipes.Parse
     * Connect 'Producer's to 'Parser's using 'runStateT' \/ 'evalStateT' \/
       'execStateT':
 
-> runStateT  :: Parser e a m r -> Producer a m e -> m (r, Producer a m e)
-> evalStateT :: Parser e a m r -> Producer a m e -> m  r
-> execStateT :: Parser e a m r -> Producer a m e -> m (   Producer a m e)
+> runStateT  :: Parser a m r -> Producer a m e -> m (r, Producer a m e)
+> evalStateT :: Parser a m r -> Producer a m e -> m  r
+> execStateT :: Parser a m r -> Producer a m e -> m (   Producer a m e)
 
 
     * Connect 'Lens''s to 'Parser's using 'zoom'
 
 > zoom :: Lens' (Producer a m e) (Producer b m e)
->      -> Parser e b m r
->      -> Parser e a m r
+>      -> Parser b m r
+>      -> Parser a m r
 
     * Connect 'Producer's to 'Lens''es using 'view' or ('^.'):
 
@@ -88,22 +88,22 @@ import Pipes.Parse
     'Parser's handle end-of-input and pushback by storing a 'Producer' in a
     'StateT' layer:
 
-> type Parser e a m r = StateT (Producer a m e) m r
+> type Parser a m r = forall e . StateT (Producer a m e) m r
 
     To draw a single element from the underlying 'Producer', use the 'draw'
     command:
 
-> draw :: (Monad m) => Parser e a m (Either e a)
+> draw :: (Monad m) => Parser a m (Maybe a)
 
-    'draw' returns the next element from the 'Producer' wrapped in 'Right' or
-    returns @Left e@ if the underlying 'Producer' is empty.  Here's an example
+    'draw' returns the next element from the 'Producer' wrapped in 'Just' or
+    returns 'Nothing' if the underlying 'Producer' is empty.  Here's an example
     'Parser' written using 'draw' that retrieves the first two elements from a
     stream:
 
 > import Control.Applicative (liftA2)
 > import Pipes.Parse
 >
-> drawTwo :: (Monad m) => Parser e a m (Either e (a, a))
+> drawTwo :: (Monad m) => Parser a m (Maybe (a, a))
 > drawTwo = do
 >     mx <- draw
 >     my <- draw
@@ -113,31 +113,30 @@ import Pipes.Parse
     same run functions as 'StateT':
 
 > -- Feed a 'Producer' to a 'Parser', returning the result and leftovers
-> runStateT  :: Parser e a m r -> Producer a m e -> m (r, Producer a m e)
+> runStateT  :: Parser a m r -> Producer a m e -> m (r, Producer a m e)
 >
 > -- Feed a 'Producer' to a 'Parser', returning only the result
-> evalStateT :: Parser e a m r -> Producer a m e -> m  r
+> evalStateT :: Parser a m r -> Producer a m e -> m  r
 >
 > -- Feed a 'Producer' to a 'Parser', returning only the leftovers
-> execStateT :: Parser e a m r -> Producer a m e -> m (   Producer a m e)
+> execStateT :: Parser a m r -> Producer a m e -> m (   Producer a m e)
 
     All three of these functions require a 'Producer' which we feed to the
     'Parser'.  For example, we can feed standard input:
 
->>> import qualified Pipes.Prelude as P
->>> evalStateT drawTwo P.stdinLn
+>>> evalStateT drawTwo Pipes.Prelude.stdinLn
 Pink<Enter>
 Elephants<Enter>
-Right ("Pink","Elephants")
+Just ("Pink","Elephants")
 
-    The result is wrapped in a 'Either' because our 'Producer' might have less
+    The result is wrapped in a 'Maybe' because our 'Producer' might have less
     than two elements:
 
 >>> evalStateT drawTwo (yield 0)
-Left ()
+Nothing
 
-    If either of our two 'draw's fails and returns a 'Left', the combined result
-    will be a 'Left'.
+    If either of our two 'draw's fails and returns a 'Nothing', the combined
+    result will be a 'Nothing'.
 
     We can use 'runStateT' or 'execStateT' to retrieve unused elements after
     parsing:
@@ -145,7 +144,7 @@ Left ()
 >>> import Pipes
 >>> (result, unused) <- runStateT drawTwo (each [1..4])
 >>> print result
-Right (1, 2)
+Just (1, 2)
 >>> runEffect $ for unused (lift . print)
 3
 4
@@ -156,7 +155,7 @@ Right (1, 2)
     @pipes-parse@ also provides a convenience function for testing purposes that
     draws all remaining elements and returns them as a list:
 
-> drawAll :: (Monad m) => Parser e a m [a]
+> drawAll :: (Monad m) => Parser a m [a]
 
     For example:
 
@@ -181,7 +180,7 @@ Right (1, 2)
 >
 > import Prelude hiding (splitAt, span)
 >
-> drawThree :: (Monad m) => Parser e a m [a]
+> drawThree :: (Monad m) => Parser a m [a]
 > drawThree = zoom (splitAt 3) drawAll
 
     'zoom' lets you delimit a 'Parser' using a 'Lens''.  The above code says to
@@ -209,12 +208,6 @@ Right (1, 2)
 
 > outer :: (Monad m) => Producer Int m (Producer Int m ())
 > outer = view (splitAt 3) (each [1..6])
->
-> -- or: outer = each [1..6]^.splitAt 3
->
-> -- or: outer = do
-> --     each [1..3]
-> --     return $ each [4..6]
 
 >>> inner <- runEffect $ for outer (lift . print)
 1
@@ -225,24 +218,30 @@ Right (1, 2)
 5
 6
 
+    The above definition of @outer@ is equivalent to:
+
+> outer = do
+>     each [1..3]
+>     return (each [4..6])
+
     'zoom' takes our lens a step further and uses it to limit our parser to the
     outer 'Producer' (the first three elements).  When the parser is done 'zoom'
     also returns unused elements back to the original stream.  We can
     demonstrate this using the following example parser:
 
-> splitExample :: (Monad m) => Parser e a m (Either e a, [a])
+> splitExample :: (Monad m) => Parser a m (Maybe a, [a])
 > splitExample = do
 >     x <- zoom (splitAt 3) draw
 >     y <- zoom (splitAt 3) drawAll
 >     return (x, y)
 
 >>> evalStateT splitExample (each [1..])
-(Right 1,[2,3,4])
+(Just 1,[2,3,4])
 
     'span' behaves the same way, except that it uses a predicate and takes as
     many consecutive elements as possible that satisfy the predicate:
 
-> spanExample :: (Monad m) => Parser e Int m (Either e Int, [Int], Either e Int)
+> spanExample :: (Monad m) => Parser Int m (Maybe Int, [Int], Maybe Int)
 > spanExample = do
 >     x <- zoom (span (>= 4)) draw
 >     y <- zoom (span (<  4)) drawAll
@@ -250,15 +249,15 @@ Right (1, 2)
 >     return (x, y, z)
 
 >>> evalStateT spanExample (each [1..])
-(Left (),[1,2,3],Right 4)
+(Nothing,[1,2,3],Just 4)
 
     You can even nest 'zoom's, too:
 
-> nestExample :: (Monad m) => Parser Int m (Either e Int, [Int], Either e Int)
+> nestExample :: (Monad m) => Parser Int m (Maybe Int, [Int], Maybe Int)
 > nestExample = zoom (splitAt 2) spanExample
 
 >>> evalStateT nestExample (each [1..])
-(Left (),[1,2],Left ())
+(Nothign,[1,2],Nothing)
 
     Note that 'zoom' nesting obeys the following two laws:
 
