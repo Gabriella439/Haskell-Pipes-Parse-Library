@@ -29,6 +29,8 @@ module Pipes.Parse.Tutorial (
     -- $conclusion
     ) where
 
+import Lens.Family2
+import Lens.Family2.State.Strict
 import Pipes
 import Pipes.Parse
 
@@ -39,45 +41,41 @@ import Pipes.Parse
 
     * 'Parser's, which play a role analogous to 'Consumer's
 
-    * 'Lens.Family.Lens''es between 'Producer's, which play a role analogous to
-      'Pipe's
+    * 'Lens''es between 'Producer's, which play a role analogous to 'Pipe's
 
     There are four ways to connect these three abstractions:
 
     * Connect 'Producer's to 'Parser's using 'runStateT' \/ 'evalStateT' \/
       'execStateT':
 
-> runStateT  :: Parser a m r -> Producer a m x -> m (r, Producer a m x)
-> evalStateT :: Parser a m r -> Producer a m x -> m  r
-> execStateT :: Parser a m r -> Producer a m x -> m (   Producer a m x)
+> runStateT  :: Parser e a m r -> Producer a m e -> m (r, Producer a m e)
+> evalStateT :: Parser e a m r -> Producer a m e -> m  r
+> execStateT :: Parser e a m r -> Producer a m e -> m (   Producer a m e)
 
 
-    * Connect 'Lens.Family.Lens''s to 'Parser'es using
-      'Lens.Family.State.Strict.zoom'
+    * Connect 'Lens''s to 'Parser's using 'zoom'
 
-> zoom :: Lens' (Producer a m x) (Producer b m y)
->      -> Parser b m r
->      -> Parser a m r
+> zoom :: Lens' (Producer a m e) (Producer b m e)
+>      -> Parser e b m r
+>      -> Parser e a m r
 
-    * Connect 'Producer's to 'Lens.Family.Lens''es using 'Lens.Family.view' or
-      ('Lens.Family.^.'):
+    * Connect 'Producer's to 'Lens''es using 'view' or ('^.'):
 
-> view :: Lens' (Producer a m x) (Producer b m y)
->      -> Producer a m x
->      -> Producer b m y
+> view :: Lens' (Producer a m e) (Producer b m e)
+>      -> Producer a m e
+>      -> Producer b m e
 
-    * Connect 'Lens.Family.Lens''es to 'Lens.Family.Lens''es using ('.') (i.e.
-      function composition):
+    * Connect 'Lens''es to 'Lens''es using ('.') (i.e.  function composition):
 
-> (.) :: Lens' (Producer a m x) (Producer b m y)
->     -> Lens' (Producer b m y) (Producer c m z)
->     -> Lens' (Producer a m x) (Producer c m z)
+> (.) :: Lens' (Producer a m e) (Producer b m e)
+>     -> Lens' (Producer b m e) (Producer c m e)
+>     -> Lens' (Producer a m e) (Producer c m e)
 
     You can obtain the necessary lens utilities from either:
     
     * The @lens-family-core@ library, importing @Lens.Family@ (for
-      'Lens.Family.view' \/ ('Lens.Family.^.') and 'Lens.Family.over') and
-      @Lens.Family.State.Strict@ (for 'Lens.Family.State.Strict.zoom'), or:
+      'view' \/ ('^.') and 'over') and @Lens.Family.State.Strict@ (for 'zoom'),
+      or:
 
     * The @lens@ library, importing @Control.Lens@ (for 'Control.Lens.view' \/
       ('Control.Lens.^.'), 'Control.Lens.over' and 'Control.Lens.zoom')
@@ -90,22 +88,22 @@ import Pipes.Parse
     'Parser's handle end-of-input and pushback by storing a 'Producer' in a
     'StateT' layer:
 
-> type Parser a m r = forall x . StateT (Producer a m x) m r
+> type Parser e a m r = StateT (Producer a m e) m r
 
     To draw a single element from the underlying 'Producer', use the 'draw'
     command:
 
-> draw :: (Monad m) => Parser a m (Maybe a)
+> draw :: (Monad m) => Parser e a m (Either e a)
 
-    'draw' returns the next element from the 'Producer' wrapped in 'Just' or
-    returns 'Nothing' if the underlying 'Producer' is empty.  Here's an example
+    'draw' returns the next element from the 'Producer' wrapped in 'Right' or
+    returns @Left e@ if the underlying 'Producer' is empty.  Here's an example
     'Parser' written using 'draw' that retrieves the first two elements from a
     stream:
 
 > import Control.Applicative (liftA2)
 > import Pipes.Parse
 >
-> drawTwo :: (Monad m) => Parser a m (Maybe (a, a))
+> drawTwo :: (Monad m) => Parser e a m (Either e (a, a))
 > drawTwo = do
 >     mx <- draw
 >     my <- draw
@@ -115,13 +113,13 @@ import Pipes.Parse
     same run functions as 'StateT':
 
 > -- Feed a 'Producer' to a 'Parser', returning the result and leftovers
-> runStateT  :: Parser a m r -> Producer a m x -> m (r, Producer a m x)
+> runStateT  :: Parser e a m r -> Producer a m e -> m (r, Producer a m e)
 >
 > -- Feed a 'Producer' to a 'Parser', returning only the result
-> evalStateT :: Parser a m r -> Producer a m x -> m  r
+> evalStateT :: Parser e a m r -> Producer a m e -> m  r
 >
 > -- Feed a 'Producer' to a 'Parser', returning only the leftovers
-> execStateT :: Parser a m r -> Producer a m x -> m (   Producer a m x)
+> execStateT :: Parser e a m r -> Producer a m e -> m (   Producer a m e)
 
     All three of these functions require a 'Producer' which we feed to the
     'Parser'.  For example, we can feed standard input:
@@ -130,16 +128,16 @@ import Pipes.Parse
 >>> evalStateT drawTwo P.stdinLn
 Pink<Enter>
 Elephants<Enter>
-Just ("Pink","Elephants")
+Right ("Pink","Elephants")
 
-    The result is wrapped in a 'Maybe' because our 'Producer' might have less
+    The result is wrapped in a 'Either' because our 'Producer' might have less
     than two elements:
 
 >>> evalStateT drawTwo (yield 0)
-Nothing
+Left ()
 
-    If either of our two 'draw's fails and returns 'Nothing', the combined
-    result will be 'Nothing'.
+    If either of our two 'draw's fails and returns a 'Left', the combined result
+    will be a 'Left'.
 
     We can use 'runStateT' or 'execStateT' to retrieve unused elements after
     parsing:
@@ -147,7 +145,7 @@ Nothing
 >>> import Pipes
 >>> (result, unused) <- runStateT drawTwo (each [1..4])
 >>> print result
-Just (1, 2)
+Right (1, 2)
 >>> runEffect $ for unused (lift . print)
 3
 4
@@ -158,7 +156,7 @@ Just (1, 2)
     @pipes-parse@ also provides a convenience function for testing purposes that
     draws all remaining elements and returns them as a list:
 
-> drawAll :: (Monad m) => Parser a m [a]
+> drawAll :: (Monad m) => Parser e a m [a]
 
     For example:
 
@@ -183,26 +181,26 @@ Just (1, 2)
 >
 > import Prelude hiding (splitAt, span)
 >
-> drawThree :: (Monad m) => Parser a m [a]
+> drawThree :: (Monad m) => Parser e a m [a]
 > drawThree = zoom (splitAt 3) drawAll
 
-    'Lens.Family.State.Strict.zoom' lets you delimit a 'Parser' using a
-    'Lens.Family.Lens'.  The above code says to limit 'drawAll' to a subset of
-    the input, in this case the first three elements:
+    'zoom' lets you delimit a 'Parser' using a 'Lens''.  The above code says to
+    limit 'drawAll' to a subset of the input, in this case the first three
+    elements:
 
 >>> evalStateT drawThree (each [1..])
 [1,2,3]
 
-    'splitAt' is a 'Lens.Family.Lens'' with the following type:
+    'splitAt' is a 'Lens'' with the following type:
 
 > splitAt
 >     :: (Monad m)
->     => Int -> Lens' (Producer a m x) (Producer a m (Producer a m x))
+>     => Int -> Lens' (Producer a m e) (Producer a m (Producer a m e))
 
     The easiest way to understand 'splitAt' is to study what happens when you
     use it as a getter:
 
-> view (splitAt 3) :: Producer a m x -> Producer a m (Producer a m x) 
+> view (splitAt 3) :: Producer a m e -> Producer a m (Producer a m e) 
 
     In this context, @(splitAt 3)@ behaves like 'splitAt' from the Prelude,
     except instead of splitting a list it splits a 'Producer'.  The outer
@@ -227,24 +225,24 @@ Just (1, 2)
 5
 6
 
-    'Lens.Family.State.Strict.zoom' takes our lens a step further and uses it to
-    limit our parser to the outer 'Producer' (the first three elements).  When
-    the parser is done 'zoom' also returns unused elements back to the original
-    stream.  We can demonstrate this using the following example parser:
+    'zoom' takes our lens a step further and uses it to limit our parser to the
+    outer 'Producer' (the first three elements).  When the parser is done 'zoom'
+    also returns unused elements back to the original stream.  We can
+    demonstrate this using the following example parser:
 
-> splitExample :: (Monad m) => Parser a m (Maybe a, [a])
+> splitExample :: (Monad m) => Parser e a m (Either e a, [a])
 > splitExample = do
 >     x <- zoom (splitAt 3) draw
 >     y <- zoom (splitAt 3) drawAll
 >     return (x, y)
 
 >>> evalStateT splitExample (each [1..])
-(Just 1,[2,3,4])
+(Right 1,[2,3,4])
 
     'span' behaves the same way, except that it uses a predicate and takes as
     many consecutive elements as possible that satisfy the predicate:
 
-> spanExample :: (Monad m) => Parser Int m (Maybe Int, [Int], Maybe Int)
+> spanExample :: (Monad m) => Parser e Int m (Either e Int, [Int], Either e Int)
 > spanExample = do
 >     x <- zoom (span (>= 4)) draw
 >     y <- zoom (span (<  4)) drawAll
@@ -252,38 +250,35 @@ Just (1, 2)
 >     return (x, y, z)
 
 >>> evalStateT spanExample (each [1..])
-(Nothing,[1,2,3],Just 4)
+(Left (),[1,2,3],Right 4)
 
-    You can even nest 'Lens.Family.State.Strict.zoom's, too:
+    You can even nest 'zoom's, too:
 
-> nestExample :: (Monad m) => Parser Int m (Maybe Int, [Int], Maybe Int)
+> nestExample :: (Monad m) => Parser Int m (Either e Int, [Int], Either e Int)
 > nestExample = zoom (splitAt 2) spanExample
 
 >>> evalStateT nestExample (each [1..])
-(Nothing,[1,2],Nothing)
+(Left (),[1,2],Left ())
 
-    Note that 'Lens.Family.State.Strict.zoom' nesting obeys the following two
-    laws:
+    Note that 'zoom' nesting obeys the following two laws:
 
 > zoom lens1 . zoom lens2 = zoom (lens1 . lens2)
 >
 > zoom id = id
 
-    Also note that 'Lens.Family.view' nesting obeys the following two laws:
+    Also note that 'view' nesting obeys the following two laws:
 
 > view lens2 . view lens1 = view (lens1 . lens2)
 >
 > view id = id
 
-    Both the 'Lens.Family.State.Strict.zoom' and 'Lens.Family.view' laws are
-    examples of functor laws, and they ensure that it does not matter whether
-    you prefer to connect lenses to each other or directly to 'Producer's and
-    'Parser's.
+    Both the 'zoom' and 'view' laws are examples of functor laws, and they
+    ensure that it does not matter whether you prefer to connect lenses to each
+    other or directly to 'Producer's and 'Parser's.
 
     However, the lenses in this library are improper, meaning that they violate
-    certain lens laws.  The first consequence of this is that
-    'Lens.Family.State.Strict.zoom' does not obey the monad morphism laws for
-    these lenses.  For example:
+    certain lens laws.  The first consequence of this is that 'zoom' does not
+    obey the monad morphism laws for these lenses.  For example:
 
 > do x <- zoom (splitAt 3) m  /=  zoom (splitAt 3) $ do x <- m
 >    zoom (splitAt 3) (f x)                             f x
@@ -335,7 +330,7 @@ Just (1, 2)
     'FreeT'-delimited 'Producer's, one for each group of consecutive equal
     elements:
 
-> view group :: (Eq a, Monad m) => Producer a m x -> FreeT (Producer a m) m x
+> view group :: (Eq a, Monad m) => Producer a m e -> FreeT (Producer a m) m e
 
     An example transformation is @(takes 3)@, which takes the first three
     'Producer's from a 'FreeT' and drops the rest:
@@ -345,7 +340,7 @@ Just (1, 2)
     An example joiner is 'concats', which collapses a 'FreeT' of 'Producer's
     back down into a single 'Producer':
 
-> concats :: (Monad m) => FreeT (Producer a m) m x -> Producer a m x
+> concats :: (Monad m) => FreeT (Producer a m) m e -> Producer a m e
 
     If you compose these three functions together, you will create a function
     that transforms a 'Producer' to keep only the first three groups of
@@ -393,7 +388,7 @@ Just (1, 2)
 {- $conclusion
     @pipes-parse@ introduces core idioms for @pipes@-based parsing.  These
     idioms reuse 'Producer's, but introduce two new abstractions:
-    'Lens.Family.Lens''es and 'Parser's.
+    'Lens''es and 'Parser's.
 
     This library is very minimal and only contains datatype-agnostic parsing
     utilities, so this tutorial does not explore the full range of parsing

@@ -64,35 +64,35 @@ import Prelude hiding (span, splitAt)
 -}
 
 -- | A 'Parser' is an action that reads from and writes to a stored 'Producer'
-type Parser e a m = StateT (Producer a m e) m
+type Parser a m r = forall e . StateT (Producer a m e) m r
 
-{-| Draw one element from the underlying 'Producer', returning 'Left' if the
+{-| Draw one element from the underlying 'Producer', returning 'Nothing' if the
     'Producer' is empty
 -}
-draw :: (Monad m) => Parser e a m (Either e a)
+draw :: (Monad m) => Parser a m (Maybe a)
 draw = do
     p <- S.get
     x <- lift (next p)
     case x of
         Left   e      -> do
             S.put (return e)
-            return (Left e)
+            return Nothing
         Right (a, p') -> do
             S.put p'
-            return (Right a)
+            return (Just a)
 {-# INLINABLE draw #-}
 
 {-| Skip one element from the underlying 'Producer', returning 'True' if
     successful or 'False' if the 'Producer' is empty
 
-> skip = fmap isRight draw
+> skip = fmap isJust draw
 -}
-skip :: (Monad m) => Parser e a m Bool
+skip :: (Monad m) => Parser a m Bool
 skip = do
     x <- draw
     return $ case x of
-        Left  _ -> False
-        Right _ -> True
+        Nothing -> False
+        Just _  -> True
 {-# INLINABLE skip #-}
 
 {-| Draw all elements from the underlying 'Producer'
@@ -102,29 +102,29 @@ skip = do
     elements immediately as they are generated instead of loading all elements
     into memory.
 -}
-drawAll :: (Monad m) => Parser e a m [a]
+drawAll :: (Monad m) => Parser a m [a]
 drawAll = go id
   where
     go diffAs = do
         x <- draw
         case x of
-            Left  _ -> return (diffAs [])
-            Right a -> go (diffAs . (a:))
+            Nothing -> return (diffAs [])
+            Just a  -> go (diffAs . (a:))
 {-# INLINABLE drawAll #-}
 
 -- | Drain all elements from the underlying 'Producer'
-skipAll :: (Monad m) => Parser e a m ()
+skipAll :: (Monad m) => Parser a m ()
 skipAll = go
   where
     go = do
         x <- draw
         case x  of
-            Left  _ -> return ()
-            Right _ -> go
+            Nothing -> return ()
+            Just _  -> go
 {-# INLINABLE skipAll #-}
 
 -- | Push back an element onto the underlying 'Producer'
-unDraw :: (Monad m) => a -> Parser e a m ()
+unDraw :: (Monad m) => a -> Parser a m ()
 unDraw a = S.modify (yield a >>)
 {-# INLINABLE unDraw #-}
 
@@ -134,29 +134,29 @@ unDraw a = S.modify (yield a >>)
 > peek = do
 >     x <- draw
 >     case x of
->         Left  _ -> return ()
->         Right a -> unDraw a
+>         Nothing -> return ()
+>         Just a  -> unDraw a
 >     return x
 -}
-peek :: (Monad m) => Parser e a m (Either e a)
+peek :: (Monad m) => Parser a m (Maybe a)
 peek = do
     x <- draw
     case x of
-        Left  _ -> return ()
-        Right a -> unDraw a
+        Nothing -> return ()
+        Just a  -> unDraw a
     return x
 {-# INLINABLE peek #-}
 
 {-| Check if the underlying 'Producer' is empty
 
-> isEndOfInput = fmap isLeft peek
+> isEndOfInput = fmap isNothing peek
 -}
-isEndOfInput :: (Monad m) => Parser e a m Bool
+isEndOfInput :: (Monad m) => Parser a m Bool
 isEndOfInput = do
     x <- peek
     return (case x of
-        Left  _ -> True
-        Right _ -> False )
+        Nothing -> True
+        Just _  -> False )
 {-# INLINABLE isEndOfInput #-}
 
 -- | Fold all input values
@@ -168,14 +168,14 @@ foldAll
     -- ^ Initial accumulator
     -> (x -> b)
     -- ^ Extraction function
-    -> Parser e a m b
+    -> Parser a m b
 foldAll step begin done = go begin
   where
     go x = do
         ea <- draw
         case ea of
-            Left  _ -> return (done x)
-            Right a -> go $! step x a
+            Nothing -> return (done x)
+            Just a  -> go $! step x a
 {-# INLINABLE foldAll #-}
 
 -- | Fold all input values monadically
@@ -187,7 +187,7 @@ foldAllM
     -- ^ Initial accumulator
     -> (x -> m b)
     -- ^ Extraction function
-    -> Parser e a m b
+    -> Parser a m b
 foldAllM step begin done = do
     x0 <- lift begin
     go x0
@@ -195,8 +195,8 @@ foldAllM step begin done = do
     go x = do
         ea <- draw
         case ea of
-            Left  _ -> lift (done x)
-            Right a -> do
+            Nothing -> lift (done x)
+            Just a  -> do
                 x' <- lift (step x a)
                 go $! x'
 {-# INLINABLE foldAllM #-}
