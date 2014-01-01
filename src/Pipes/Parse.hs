@@ -83,6 +83,8 @@ draw = do
 
 {-| Skip one element from the underlying 'Producer', returning 'True' if
     successful or 'False' if the 'Producer' is empty
+
+> skip = fmap isRight draw
 -}
 skip :: (Monad m) => Parser e a m Bool
 skip = do
