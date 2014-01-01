@@ -39,7 +39,6 @@ module Pipes.Parse (
     module Control.Monad.Trans.Class,
     module Control.Monad.Trans.Free,
     module Control.Monad.Trans.State.Strict,
-    module Lens.Family2,
     module Pipes
     ) where
 
@@ -51,7 +50,7 @@ import qualified Control.Monad.Trans.State.Strict as S
 import Control.Monad.Trans.State.Strict (
     StateT(StateT, runStateT), evalStateT, execStateT )
 import Data.Functor.Constant (Constant(Constant, getConstant))
-import Lens.Family2 (LensLike, LensLike', Lens')
+import Lens.Family2 (Lens')
 import Pipes (Producer, yield, next)
 import qualified Pipes as P
 
@@ -457,8 +456,6 @@ foldsM step begin done = go
 
     @Control.Monad.Trans.State.Strict@ re-exports 'StateT', 'runStateT',
     'evalStateT', and 'execStateT'.
-
-    @Lens.Family2@ re-exports 'Lens'', 'LensLike'', and 'LensLike'
 
     @Pipes@ re-exports 'Producer', 'yield', and 'next'.
 -}
