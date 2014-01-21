@@ -1,10 +1,13 @@
--- | Element-agnostic parsing utilities for @pipes@
+{-| Element-agnostic parsing utilities for @pipes@
+
+    See "Pipes.Parse.Tutorial" for an extended tutorial
+-}
 
 {-# LANGUAGE RankNTypes #-}
 
 module Pipes.Parse (
-    -- * Parsers
-    -- $parser
+    -- * Parsing
+    -- $parsing
     Parser,
     draw,
     skip,
@@ -16,23 +19,26 @@ module Pipes.Parse (
     foldAll,
     foldAllM,
 
-    -- * Lenses
+    -- * Parsing Lenses
+    -- $parsinglenses
     span,
     splitAt,
+
+    -- * FreeT Lenses
     groupBy,
     group,
     chunksOf,
 
-    -- * Transformations
+    -- * FreeT Transformations
     takes,
     takes',
     drops,
 
-    -- * Joiners
+    -- * FreeT Joiners
     concats,
     intercalate,
 
-    -- * Folds
+    -- * FreeT Folds
     folds,
     foldsM,
 
@@ -58,9 +64,18 @@ import qualified Pipes as P
 
 import Prelude hiding (span, splitAt)
 
-{- $parser
+{- $parsing
     @pipes-parse@ handles end-of-input and pushback by storing a 'Producer' in
     a 'StateT' layer.
+
+    Connect 'Parser's to 'Producer's using either 'runStateT', 'evalStateT', or
+    'execStateT':
+
+> runStateT  :: Parser a m r -> Producer a m x -> m (r, Producer a m x)
+> evalStateT :: Parser a m r -> Producer a m x -> m  r
+> execStateT :: Parser a m r -> Producer a m x -> m    (Producer a m x)
+>                                                       ^^^^^^^^^^^^^^
+>                                                          Leftovers
 -}
 
 -- | A 'Parser' is an action that reads from and writes to a stored 'Producer'
@@ -69,7 +84,7 @@ type Parser a m r = forall x . StateT (Producer a m x) m r
 {-| Draw one element from the underlying 'Producer', returning 'Nothing' if the
     'Producer' is empty
 -}
-draw :: (Monad m) => Parser a m (Maybe a)
+draw :: Monad m => Parser a m (Maybe a)
 draw = do
     p <- S.get
     x <- lift (next p)
@@ -87,7 +102,7 @@ draw = do
 
 > skip = fmap isJust draw
 -}
-skip :: (Monad m) => Parser a m Bool
+skip :: Monad m => Parser a m Bool
 skip = do
     x <- draw
     return $ case x of
@@ -102,7 +117,7 @@ skip = do
     elements immediately as they are generated instead of loading all elements
     into memory.
 -}
-drawAll :: (Monad m) => Parser a m [a]
+drawAll :: Monad m => Parser a m [a]
 drawAll = go id
   where
     go diffAs = do
@@ -113,7 +128,7 @@ drawAll = go id
 {-# INLINABLE drawAll #-}
 
 -- | Drain all elements from the underlying 'Producer'
-skipAll :: (Monad m) => Parser a m ()
+skipAll :: Monad m => Parser a m ()
 skipAll = go
   where
     go = do
@@ -124,7 +139,7 @@ skipAll = go
 {-# INLINABLE skipAll #-}
 
 -- | Push back an element onto the underlying 'Producer'
-unDraw :: (Monad m) => a -> Parser a m ()
+unDraw :: Monad m => a -> Parser a m ()
 unDraw a = S.modify (yield a >>)
 {-# INLINABLE unDraw #-}
 
@@ -138,7 +153,7 @@ unDraw a = S.modify (yield a >>)
 >         Just a  -> unDraw a
 >     return x
 -}
-peek :: (Monad m) => Parser a m (Maybe a)
+peek :: Monad m => Parser a m (Maybe a)
 peek = do
     x <- draw
     case x of
@@ -151,7 +166,7 @@ peek = do
 
 > isEndOfInput = fmap isNothing peek
 -}
-isEndOfInput :: (Monad m) => Parser a m Bool
+isEndOfInput :: Monad m => Parser a m Bool
 isEndOfInput = do
     x <- peek
     return (case x of
@@ -166,7 +181,7 @@ isEndOfInput = do
 @
 -}
 foldAll 
-    :: (Monad m)
+    :: Monad m
     => (x -> a -> x)
     -- ^ Step function
     -> x
@@ -190,7 +205,7 @@ foldAll step begin done = go begin
 @
 -}
 foldAllM
-    :: (Monad m)
+    :: Monad m
     => (x -> a -> m x)
     -- ^ Step function
     -> m x
@@ -211,16 +226,36 @@ foldAllM step begin done = do
                 go $! x'
 {-# INLINABLE foldAllM #-}
 
+{- $parsinglenses
+    Connect 'Producer's to lenses using ('Lens.Family.^.'):
+
+> (^.) :: Producer a m x
+>      -> Lens' (Producer a m x) (Producer b m y)
+>      -> Producer b m y
+
+    Connect lenses to 'Parser's using 'Lens.Family.State.Strict.zoom':
+
+> zoom :: Lens' (Producer a m x) (Producer b m y)
+>      -> Parser b m r
+>      -> Parser a m r
+
+    Connect lenses to each other using ('.'):
+
+> (.) :: Lens' (Producer a m x) (Producer b m y)
+>     -> Lens' (Producer b m y) (Producer c m z)
+>     -> Lens' (Producer a m y) (Producer c m z)
+-}
+
 {-| 'span' is an improper lens from a 'Producer' to two 'Producer's split using
     the given predicate, where the outer 'Producer' is the longest consecutive
     group of elements that satisfy the predicate
 -}
 span
-    :: (Monad m)
+    :: Monad m
     => (a -> Bool) -> Lens' (Producer a m x) (Producer a m (Producer a m x))
 span predicate k p0 = fmap join (k (to p0))
   where
---  to :: (Monad m) => Producer a m x -> Producer a m (Producer a m x)
+--  to :: Monad m => Producer a m x -> Producer a m (Producer a m x)
     to p = do
         x <- lift (next p)
         case x of
@@ -237,11 +272,11 @@ span predicate k p0 = fmap join (k (to p0))
     after the given number of elements
 -}
 splitAt
-    :: (Monad m)
+    :: Monad m
     => Int -> Lens' (Producer a m x) (Producer a m (Producer a m x))
 splitAt n0 k p0 = fmap join (k (to n0 p0))
   where
---  to :: (Monad m) => Int -> Producer a m x -> Producer a m (Producer a m x)
+--  to :: Monad m => Int -> Producer a m x -> Producer a m (Producer a m x)
     to n p =
         if (n <= 0)
         then return p
@@ -261,11 +296,11 @@ a ^. lens = getConstant (lens Constant a)
     grouped using the given equality predicate
 -}
 groupBy
-    :: (Monad m)
+    :: Monad m
     => (a -> a -> Bool) -> Lens' (Producer a m x) (FreeT (Producer a m) m x)
 groupBy equals k p0 = fmap concats (k (to p0))
   where
---  to :: (Monad m) => Producer a m r -> FreeT (Producer a m) m r
+--  to :: Monad m => Producer a m r -> FreeT (Producer a m) m r
     to p = FreeT $ do
         x <- next p
         return $ case x of
@@ -284,10 +319,10 @@ group = groupBy (==)
     of fixed length
 -}
 chunksOf
-    :: (Monad m) => Int -> Lens' (Producer a m x) (FreeT (Producer a m) m x)
+    :: Monad m => Int -> Lens' (Producer a m x) (FreeT (Producer a m) m x)
 chunksOf n0 k p0 = fmap concats (k (to p0))
   where
---  to :: (Monad m) => Producer a m x -> FreeT (Producer a m) m x
+--  to :: Monad m => Producer a m x -> FreeT (Producer a m) m x
     to p = FreeT $ do
         x <- next p
         return $ case x of
@@ -298,7 +333,7 @@ chunksOf n0 k p0 = fmap concats (k (to p0))
 {-# INLINABLE chunksOf #-}
 
 -- | Join a 'FreeT'-delimited stream of 'Producer's into a single 'Producer'
-concats :: (Monad m) => FreeT (Producer a m) m x -> Producer a m x
+concats :: Monad m => FreeT (Producer a m) m x -> Producer a m x
 concats = go
   where
     go f = do
@@ -314,8 +349,7 @@ concats = go
     intercalating a 'Producer' in between them
 -}
 intercalate
-    :: (Monad m)
-    => Producer a m () -> FreeT (Producer a m) m x -> Producer a m x
+    :: Monad m => Producer a m () -> FreeT (Producer a m) m x -> Producer a m x
 intercalate sep = go0
   where
     go0 f = do
@@ -352,10 +386,11 @@ takes = go
 {-| @(takes' n)@ only keeps the first @n@ 'Producer's of a 'FreeT'
 
     'takes'' differs from 'takes' by draining unused 'Producer's in order
-    to preserve the return value.
+    to preserve the return value.  This makes it a suitable argument for
+    'transFreeT'
 -}
 takes'
-    :: (Monad m) => Int -> FreeT (Producer a m) m x -> FreeT (Producer a m) m x
+    :: Monad m => Int -> FreeT (Producer a m) m x -> FreeT (Producer a m) m x
 takes' = go0
   where
     go0 n f = FreeT $
@@ -381,7 +416,7 @@ takes' = go0
     layers, just discarding everything they produce.
 -}
 drops
-    :: (Monad m) => Int -> FreeT (Producer a m) m x -> FreeT (Producer a m) m x
+    :: Monad m => Int -> FreeT (Producer a m) m x -> FreeT (Producer a m) m x
 drops = go
   where
     go n ft
@@ -403,7 +438,7 @@ drops = go
 @
 -}
 folds
-    :: (Monad m)
+    :: Monad m
     => (x -> a -> x)
     -- ^ Step function
     -> x
@@ -439,7 +474,7 @@ folds step begin done = go
 @
 -}
 foldsM
-    :: (Monad m)
+    :: Monad m
     => (x -> a -> m x)
     -- ^ Step function
     -> m x
@@ -473,13 +508,13 @@ foldsM step begin done = go
                 foldM p' $! x'
 
 {- $reexports
-    @Control.Monad.Trans.Class@ re-exports 'lift'.
+    "Control.Monad.Trans.Class" re-exports 'lift'.
 
-    @Control.Monad.Trans.Free@ re-exports 'FreeF', 'FreeT', 'runFreeT', and
+    "Control.Monad.Trans.Free" re-exports 'FreeF', 'FreeT', 'runFreeT', and
     'transFreeT'.
 
-    @Control.Monad.Trans.State.Strict@ re-exports 'StateT', 'runStateT',
+    "Control.Monad.Trans.State.Strict" re-exports 'StateT', 'runStateT',
     'evalStateT', and 'execStateT'.
 
-    @Pipes@ re-exports 'Producer', 'yield', and 'next'.
+    "Pipes" re-exports 'Producer', 'yield', and 'next'.
 -}
