@@ -45,31 +45,31 @@ import Pipes.Parse
 
     There are four ways to connect these three abstractions:
 
-    * Connect 'Producer's to 'Parser's using 'runStateT' \/ 'evalStateT' \/
+    * Connect 'Parser's to 'Producer's using 'runStateT' \/ 'evalStateT' \/
       'execStateT':
 
-> runStateT  :: Parser a m r -> Producer a m e -> m (r, Producer a m e)
-> evalStateT :: Parser a m r -> Producer a m e -> m  r
-> execStateT :: Parser a m r -> Producer a m e -> m (   Producer a m e)
+> runStateT  :: Parser a m r -> Producer a m x -> m (r, Producer a m x)
+> evalStateT :: Parser a m r -> Producer a m x -> m  r
+> execStateT :: Parser a m r -> Producer a m x -> m (   Producer a m x)
 
 
     * Connect 'Lens''s to 'Parser's using 'zoom'
 
-> zoom :: Lens' (Producer a m e) (Producer b m e)
+> zoom :: Lens' (Producer a m x) (Producer b m y)
 >      -> Parser b m r
 >      -> Parser a m r
 
     * Connect 'Producer's to 'Lens''es using 'view' or ('^.'):
 
-> view :: Lens' (Producer a m e) (Producer b m e)
->      -> Producer a m e
->      -> Producer b m e
+> view :: Lens' (Producer a m x) (Producer b m y)
+>      -> Producer a m x
+>      -> Producer b m y
 
     * Connect 'Lens''es to 'Lens''es using ('.') (i.e.  function composition):
 
-> (.) :: Lens' (Producer a m e) (Producer b m e)
->     -> Lens' (Producer b m e) (Producer c m e)
->     -> Lens' (Producer a m e) (Producer c m e)
+> (.) :: Lens' (Producer a m x) (Producer b m y)
+>     -> Lens' (Producer b m y) (Producer c m z)
+>     -> Lens' (Producer a m x) (Producer c m z)
 
     You can obtain the necessary lens utilities from either:
     
@@ -88,12 +88,12 @@ import Pipes.Parse
     'Parser's handle end-of-input and pushback by storing a 'Producer' in a
     'StateT' layer:
 
-> type Parser a m r = forall e . StateT (Producer a m e) m r
+> type Parser a m r = forall x . StateT (Producer a m x) m r
 
     To draw a single element from the underlying 'Producer', use the 'draw'
     command:
 
-> draw :: (Monad m) => Parser a m (Maybe a)
+> draw :: Monad m => Parser a m (Maybe a)
 
     'draw' returns the next element from the 'Producer' wrapped in 'Just' or
     returns 'Nothing' if the underlying 'Producer' is empty.  Here's an example
@@ -103,7 +103,7 @@ import Pipes.Parse
 > import Control.Applicative (liftA2)
 > import Pipes.Parse
 >
-> drawTwo :: (Monad m) => Parser a m (Maybe (a, a))
+> drawTwo :: Monad m => Parser a m (Maybe (a, a))
 > drawTwo = do
 >     mx <- draw
 >     my <- draw
@@ -113,13 +113,13 @@ import Pipes.Parse
     same run functions as 'StateT':
 
 > -- Feed a 'Producer' to a 'Parser', returning the result and leftovers
-> runStateT  :: Parser a m r -> Producer a m e -> m (r, Producer a m e)
+> runStateT  :: Parser a m r -> Producer a m x -> m (r, Producer a m x)
 >
 > -- Feed a 'Producer' to a 'Parser', returning only the result
-> evalStateT :: Parser a m r -> Producer a m e -> m  r
+> evalStateT :: Parser a m r -> Producer a m x -> m  r
 >
 > -- Feed a 'Producer' to a 'Parser', returning only the leftovers
-> execStateT :: Parser a m r -> Producer a m e -> m (   Producer a m e)
+> execStateT :: Parser a m r -> Producer a m x -> m (   Producer a m x)
 
     All three of these functions require a 'Producer' which we feed to the
     'Parser'.  For example, we can feed standard input:
@@ -155,7 +155,7 @@ Just (1, 2)
     @pipes-parse@ also provides a convenience function for testing purposes that
     draws all remaining elements and returns them as a list:
 
-> drawAll :: (Monad m) => Parser a m [a]
+> drawAll :: Monad m => Parser a m [a]
 
     For example:
 
@@ -180,7 +180,7 @@ Just (1, 2)
 >
 > import Prelude hiding (splitAt, span)
 >
-> drawThree :: (Monad m) => Parser a m [a]
+> drawThree :: Monad m => Parser a m [a]
 > drawThree = zoom (splitAt 3) drawAll
 
     'zoom' lets you delimit a 'Parser' using a 'Lens''.  The above code says to
@@ -193,20 +193,20 @@ Just (1, 2)
     'splitAt' is a 'Lens'' with the following type:
 
 > splitAt
->     :: (Monad m)
->     => Int -> Lens' (Producer a m e) (Producer a m (Producer a m e))
+>     :: Monad m
+>     => Int -> Lens' (Producer a m x) (Producer a m (Producer a m x))
 
     The easiest way to understand 'splitAt' is to study what happens when you
     use it as a getter:
 
-> view (splitAt 3) :: Producer a m e -> Producer a m (Producer a m e) 
+> view (splitAt 3) :: Producer a m x -> Producer a m (Producer a m x) 
 
     In this context, @(splitAt 3)@ behaves like 'splitAt' from the Prelude,
     except instead of splitting a list it splits a 'Producer'.  The outer
     'Producer' contains up to 3 elements and the inner 'Producer' contains the
     remainder of the elements.
 
-> outer :: (Monad m) => Producer Int m (Producer Int m ())
+> outer :: Monad m => Producer Int m (Producer Int m ())
 > outer = view (splitAt 3) (each [1..6])
 
 >>> inner <- runEffect $ for outer (lift . print)
@@ -229,7 +229,7 @@ Just (1, 2)
     also returns unused elements back to the original stream.  We can
     demonstrate this using the following example parser:
 
-> splitExample :: (Monad m) => Parser a m (Maybe a, [a])
+> splitExample :: Monad m => Parser a m (Maybe a, [a])
 > splitExample = do
 >     x <- zoom (splitAt 3) draw
 >     y <- zoom (splitAt 3) drawAll
@@ -241,7 +241,7 @@ Just (1, 2)
     'span' behaves the same way, except that it uses a predicate and takes as
     many consecutive elements as possible that satisfy the predicate:
 
-> spanExample :: (Monad m) => Parser Int m (Maybe Int, [Int], Maybe Int)
+> spanExample :: Monad m => Parser Int m (Maybe Int, [Int], Maybe Int)
 > spanExample = do
 >     x <- zoom (span (>= 4)) draw
 >     y <- zoom (span (<  4)) drawAll
@@ -253,7 +253,7 @@ Just (1, 2)
 
     You can even nest 'zoom's, too:
 
-> nestExample :: (Monad m) => Parser Int m (Maybe Int, [Int], Maybe Int)
+> nestExample :: Monad m => Parser Int m (Maybe Int, [Int], Maybe Int)
 > nestExample = zoom (splitAt 2) spanExample
 
 >>> evalStateT nestExample (each [1..])
@@ -325,21 +325,21 @@ Just (1, 2)
 > -- A "joiner"
 > FreeT (Producer a m) m () -> Producer a m ()            ~  [[a]] ->  [a]
 
-    An example splitter is @(view group)@, which splits a 'Producer' into
+    An example splitter is @(view groups)@, which splits a 'Producer' into
     'FreeT'-delimited 'Producer's, one for each group of consecutive equal
     elements:
 
-> view group :: (Eq a, Monad m) => Producer a m e -> FreeT (Producer a m) m e
+> view groups :: (Eq a, Monad m) => Producer a m x -> FreeT (Producer a m) m x
 
     An example transformation is @(takes 3)@, which takes the first three
     'Producer's from a 'FreeT' and drops the rest:
 
-> takes 3 :: (Monad m) => FreeT (Producer a m) m () -> FreeT (Producer a m) m ()
+> takes 3 :: Monad m => FreeT (Producer a m) m () -> FreeT (Producer a m) m ()
 
     An example joiner is 'concats', which collapses a 'FreeT' of 'Producer's
     back down into a single 'Producer':
 
-> concats :: (Monad m) => FreeT (Producer a m) m e -> Producer a m e
+> concats :: Monad m => FreeT (Producer a m) m x -> Producer a m x
 
     If you compose these three functions together, you will create a function
     that transforms a 'Producer' to keep only the first three groups of
@@ -349,7 +349,7 @@ Just (1, 2)
 > import Pipes.Parse
 >
 > threeGroups :: (Monad m, Eq a) => Producer a m () -> Producer a m ()
-> threeGroups = concats . takes 3 . view group
+> threeGroups = concats . takes 3 . view groups
 
     Both splitting and joining preserve the streaming nature of 'Producer's and
     do not collect or buffer any values.  The transformed 'Producer' still
@@ -372,12 +372,12 @@ Just (1, 2)
 4<Enter>
 >>> -- Note that the 4 is not echoed
 
-    Also, lenses simplify things even further.  The reason that 'group' is a
+    Also, lenses simplify things even further.  The reason that 'groups' is a
     lens is because it actually packages both a splitter and joiner into a
     single package.  We can then use 'over' to handle both the splitting and
     joining for us:
 
->>> runEffect $ over group (takes 3) P.stdinLn >-> P.stdoutLn
+>>> runEffect $ over groups (takes 3) P.stdinLn >-> P.stdoutLn
 
     This gives the exact same behavior because 'over' takes care of calling the
     splitter before applying the transformation, then calling the joiner
@@ -398,12 +398,12 @@ Just (1, 2)
     sophisticated.  If you are interested in writing your own custom lenses,
     study the implementation of 'splitAt'.
 
-    'FreeT' requires even greater sophistication.  Study how 'groupBy' works to
+    'FreeT' requires even greater sophistication.  Study how 'groupsBy' works to
     learn how to use 'FreeT' to introduce boundaries in a stream of 'Producer's.
     You can then use 'FreeT' to create your own custom splitters.
 
     To learn more about @pipes-parse@, ask questions, or follow development, you
-    an subscribe to the @haskell-pipes@ mailing list at:
+    can subscribe to the @haskell-pipes@ mailing list at:
 
     <https://groups.google.com/forum/#!forum/haskell-pipes>
 
