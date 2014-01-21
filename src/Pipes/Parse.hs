@@ -64,7 +64,7 @@ import Prelude hiding (span, splitAt)
 -}
 
 -- | A 'Parser' is an action that reads from and writes to a stored 'Producer'
-type Parser a m r = forall e . StateT (Producer a m e) m r
+type Parser a m r = forall x . StateT (Producer a m x) m r
 
 {-| Draw one element from the underlying 'Producer', returning 'Nothing' if the
     'Producer' is empty
@@ -159,7 +159,12 @@ isEndOfInput = do
         Just _  -> False )
 {-# INLINABLE isEndOfInput #-}
 
--- | Fold all input values
+{-| Fold all input values
+
+@
+ 'Control.Foldl.purely' foldAll :: Monad m => 'Control.Foldl.Fold' a b -> Parser a m b
+@
+-}
 foldAll 
     :: (Monad m)
     => (x -> a -> x)
@@ -178,7 +183,12 @@ foldAll step begin done = go begin
             Just a  -> go $! step x a
 {-# INLINABLE foldAll #-}
 
--- | Fold all input values monadically
+{-| Fold all input values monadically
+
+@
+ 'Control.Foldl.impurely' foldAllM :: Monad m => 'Control.Foldl.FoldM' a m b -> Parser a m b
+@
+-}
 foldAllM
     :: (Monad m)
     => (x -> a -> m x)
@@ -207,10 +217,10 @@ foldAllM step begin done = do
 -}
 span
     :: (Monad m)
-    => (a -> Bool) -> Lens' (Producer a m e) (Producer a m (Producer a m e))
+    => (a -> Bool) -> Lens' (Producer a m x) (Producer a m (Producer a m x))
 span predicate k p0 = fmap join (k (to p0))
   where
---  to :: (Monad m) => Producer a m e -> Producer a m (Producer a m e)
+--  to :: (Monad m) => Producer a m x -> Producer a m (Producer a m x)
     to p = do
         x <- lift (next p)
         case x of
@@ -228,10 +238,10 @@ span predicate k p0 = fmap join (k (to p0))
 -}
 splitAt
     :: (Monad m)
-    => Int -> Lens' (Producer a m e) (Producer a m (Producer a m e))
+    => Int -> Lens' (Producer a m x) (Producer a m (Producer a m x))
 splitAt n0 k p0 = fmap join (k (to n0 p0))
   where
---  to :: (Monad m) => Int -> Producer a m e -> Producer a m (Producer a m e)
+--  to :: (Monad m) => Int -> Producer a m x -> Producer a m (Producer a m x)
     to n p =
         if (n <= 0)
         then return p
@@ -252,7 +262,7 @@ a ^. lens = getConstant (lens Constant a)
 -}
 groupBy
     :: (Monad m)
-    => (a -> a -> Bool) -> Lens' (Producer a m e) (FreeT (Producer a m) m e)
+    => (a -> a -> Bool) -> Lens' (Producer a m x) (FreeT (Producer a m) m x)
 groupBy equals k p0 = fmap concats (k (to p0))
   where
 --  to :: (Monad m) => Producer a m r -> FreeT (Producer a m) m r
@@ -266,7 +276,7 @@ groupBy equals k p0 = fmap concats (k (to p0))
 {-# INLINABLE groupBy #-}
 
 -- | Like 'groupBy', where the equality predicate is ('==')
-group :: (Monad m, Eq a) => Lens' (Producer a m e) (FreeT (Producer a m) m e)
+group :: (Monad m, Eq a) => Lens' (Producer a m x) (FreeT (Producer a m) m x)
 group = groupBy (==)
 {-# INLINABLE group #-}
 
@@ -274,10 +284,10 @@ group = groupBy (==)
     of fixed length
 -}
 chunksOf
-    :: (Monad m) => Int -> Lens' (Producer a m e) (FreeT (Producer a m) m e)
+    :: (Monad m) => Int -> Lens' (Producer a m x) (FreeT (Producer a m) m x)
 chunksOf n0 k p0 = fmap concats (k (to p0))
   where
---  to :: (Monad m) => Producer a m e -> FreeT (Producer a m) m e
+--  to :: (Monad m) => Producer a m x -> FreeT (Producer a m) m x
     to p = FreeT $ do
         x <- next p
         return $ case x of
@@ -288,7 +298,7 @@ chunksOf n0 k p0 = fmap concats (k (to p0))
 {-# INLINABLE chunksOf #-}
 
 -- | Join a 'FreeT'-delimited stream of 'Producer's into a single 'Producer'
-concats :: (Monad m) => FreeT (Producer a m) m e -> Producer a m e
+concats :: (Monad m) => FreeT (Producer a m) m x -> Producer a m x
 concats = go
   where
     go f = do
@@ -305,7 +315,7 @@ concats = go
 -}
 intercalate
     :: (Monad m)
-    => Producer a m () -> FreeT (Producer a m) m e -> Producer a m e
+    => Producer a m () -> FreeT (Producer a m) m x -> Producer a m x
 intercalate sep = go0
   where
     go0 f = do
@@ -345,7 +355,7 @@ takes = go
     to preserve the return value.
 -}
 takes'
-    :: (Monad m) => Int -> FreeT (Producer a m) m e -> FreeT (Producer a m) m e
+    :: (Monad m) => Int -> FreeT (Producer a m) m x -> FreeT (Producer a m) m x
 takes' = go0
   where
     go0 n f = FreeT $
@@ -371,7 +381,7 @@ takes' = go0
     layers, just discarding everything they produce.
 -}
 drops
-    :: (Monad m) => Int -> FreeT (Producer a m) m e -> FreeT (Producer a m) m e
+    :: (Monad m) => Int -> FreeT (Producer a m) m x -> FreeT (Producer a m) m x
 drops = go
   where
     go n ft
@@ -385,7 +395,13 @@ drops = go
                     runFreeT $ go (n-1) ft'
 {-# INLINABLE drops #-}
 
--- | Fold each 'Producer' of a 'FreeT'
+{-| Fold each 'Producer' of a 'FreeT'
+
+@
+ 'Control.Foldl.purely' folds
+     :: Monad m => 'Control.Foldl.Fold' a b -> FreeT (Producer a m) m r -> Producer b m r
+@
+-}
 folds
     :: (Monad m)
     => (x -> a -> x)
@@ -394,9 +410,9 @@ folds
     -- ^ Initial accumulator
     -> (x -> b)
     -- ^ Extraction function
-    -> FreeT (Producer a m) m e
+    -> FreeT (Producer a m) m r
     -- ^
-    -> Producer b m e
+    -> Producer b m r
 folds step begin done = go
   where
     go f = do
@@ -415,7 +431,13 @@ folds step begin done = go
             Right (a, p') -> fold p' $! step x a
 {-# INLINABLE folds #-}
 
--- | Fold each 'Producer' of a 'FreeT', monadically
+{-| Fold each 'Producer' of a 'FreeT', monadically
+
+@
+ 'Control.Foldl.impurely' foldsM
+     :: Monad m => 'Control.Foldl.FoldM' a b -> FreeT (Producer a m) m r -> Producer b m r
+@
+-}
 foldsM
     :: (Monad m)
     => (x -> a -> m x)
@@ -424,9 +446,9 @@ foldsM
     -- ^ Initial accumulator
     -> (x -> m b)
     -- ^ Extraction function
-    -> FreeT (Producer a m) m e
+    -> FreeT (Producer a m) m r
     -- ^
-    -> Producer b m e
+    -> Producer b m r
 foldsM step begin done = go
   where
     go f = do
