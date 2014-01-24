@@ -331,7 +331,7 @@ groupsBy equals k p0 = fmap concats (k (to p0))
         x <- next p
         return $ case x of
             Left   r      -> Pure r
-            Right (a, p') -> Free $ fmap to ((yield a >> p')^.groupBy equals)
+            Right (a, p') -> Free $ fmap to ((yield a >> p')^.span (equals a))
 {-# INLINABLE groupsBy #-}
 
 -- | Like 'groupsBy', where the equality predicate is ('==')
