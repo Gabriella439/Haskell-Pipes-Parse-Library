@@ -60,7 +60,6 @@ import qualified Control.Monad.Trans.State.Strict as S
 import Control.Monad.Trans.State.Strict (
     StateT(StateT, runStateT), evalStateT, execStateT )
 import Data.Functor.Constant (Constant(Constant, getConstant))
-import Lens.Family2 (Lens')
 import Pipes (Producer, yield, next)
 import qualified Pipes as P
 
@@ -242,12 +241,14 @@ foldAllM step begin done = do
 >      -> Parser b m r
 >      -> Parser a m r
 
-    Connect lenses to each other using ('.'):
+    Connect lenses to each other using ('.') (i.e. function composition):
 
 > (.) :: Lens' (Producer a m x) (Producer b m y)
 >     -> Lens' (Producer b m y) (Producer c m z)
 >     -> Lens' (Producer a m y) (Producer c m z)
 -}
+
+type Lens' a b = forall f . (Functor f) => (b -> f b) -> (a -> f a)
 
 {-| 'span' is an improper lens from a 'Producer' to two 'Producer's split using
     the given predicate, where the outer 'Producer' is the longest consecutive

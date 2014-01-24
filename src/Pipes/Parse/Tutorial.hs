@@ -29,8 +29,8 @@ module Pipes.Parse.Tutorial (
     -- $conclusion
     ) where
 
-import Lens.Family2
-import Lens.Family2.State.Strict
+-- import Lens.Family2
+-- import Lens.Family2.State.Strict
 import Pipes
 import Pipes.Parse
 
@@ -41,7 +41,8 @@ import Pipes.Parse
 
     * 'Parser's, which play a role analogous to 'Consumer's
 
-    * 'Lens''es between 'Producer's, which play a role analogous to 'Pipe's
+    * 'Lens.Family2.Lens''es between 'Producer's, which play a role analogous to
+      'Pipe's
 
     There are four ways to connect these three abstractions:
 
@@ -53,19 +54,20 @@ import Pipes.Parse
 > execStateT :: Parser a m r -> Producer a m x -> m (   Producer a m x)
 
 
-    * Connect 'Lens''s to 'Parser's using 'zoom'
+    * Connect 'Lens.Family2.Lens''s to 'Parser's using 'zoom'
 
 > zoom :: Lens' (Producer a m x) (Producer b m y)
 >      -> Parser b m r
 >      -> Parser a m r
 
-    * Connect 'Producer's to 'Lens''es using 'view' or ('^.'):
+    * Connect 'Producer's to 'Lens.Family2.Lens''es using 'view' or ('^.'):
 
 > view :: Lens' (Producer a m x) (Producer b m y)
 >      -> Producer a m x
 >      -> Producer b m y
 
-    * Connect 'Lens''es to 'Lens''es using ('.') (i.e.  function composition):
+    * Connect 'Lens.Family2.Lens''es to 'Lens''es using ('.') (i.e.  function
+      composition):
 
 > (.) :: Lens' (Producer a m x) (Producer b m y)
 >     -> Lens' (Producer b m y) (Producer c m z)
@@ -183,14 +185,14 @@ Just (1, 2)
 > drawThree :: Monad m => Parser a m [a]
 > drawThree = zoom (splitAt 3) drawAll
 
-    'zoom' lets you delimit a 'Parser' using a 'Lens''.  The above code says to
-    limit 'drawAll' to a subset of the input, in this case the first three
-    elements:
+    'zoom' lets you delimit a 'Parser' using a 'Lens.Family2.Lens''.  The above
+    code says to limit 'drawAll' to a subset of the input, in this case the
+    first three elements:
 
 >>> evalStateT drawThree (each [1..])
 [1,2,3]
 
-    'splitAt' is a 'Lens'' with the following type:
+    'splitAt' is a 'Lens.Family2.Lens'' with the following type:
 
 > splitAt
 >     :: Monad m
@@ -387,7 +389,7 @@ Just (1, 2)
 {- $conclusion
     @pipes-parse@ introduces core idioms for @pipes@-based parsing.  These
     idioms reuse 'Producer's, but introduce two new abstractions:
-    'Lens''es and 'Parser's.
+    'Lens.Family2.Lens''es and 'Parser's.
 
     This library is very minimal and only contains datatype-agnostic parsing
     utilities, so this tutorial does not explore the full range of parsing
