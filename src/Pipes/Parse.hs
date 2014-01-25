@@ -228,11 +228,11 @@ foldAllM step begin done = do
 {-# INLINABLE foldAllM #-}
 
 {- $parsinglenses
-    Connect lenses to 'Producer's using 'Lens.Family.view' or
-    ('Lens.Family.^.'):
+    Connect lenses to 'Producer's using ('Lens.Family.^.') or
+    'Lens.Family.view':
 
-> view :: Lens' (Producer a m x) (Producer b m y)
->      -> Producer a m x
+> (^.) :: Producer a m x
+>      -> Lens' (Producer a m x) (Producer b m y)
 >      -> Producer b m y
 
     Connect lenses to 'Parser's using 'Lens.Family.State.Strict.zoom':

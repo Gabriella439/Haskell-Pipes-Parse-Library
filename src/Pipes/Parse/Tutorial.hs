@@ -60,10 +60,10 @@ import Pipes.Parse
 >      -> Parser b m r
 >      -> Parser a m r
 
-    * Connect 'Producer's to 'Lens.Family2.Lens''es using 'view' or ('^.'):
+    * Connect 'Producer's to 'Lens.Family2.Lens''es using ('^.') or 'view':
 
-> view :: Lens' (Producer a m x) (Producer b m y)
->      -> Producer a m x
+> (^.) :: Producer a m x
+>      -> Lens' (Producer a m x) (Producer b m y)
 >      -> Producer b m y
 
     * Connect 'Lens.Family2.Lens''es to 'Lens''es using ('.') (i.e.  function
@@ -76,11 +76,11 @@ import Pipes.Parse
     You can obtain the necessary lens utilities from either:
     
     * The @lens-family-core@ library, importing @Lens.Family@ (for
-      'view' \/ ('^.') and 'over') and @Lens.Family.State.Strict@ (for 'zoom'),
+      ('^.') \/ 'view' and 'over') and @Lens.Family.State.Strict@ (for 'zoom'),
       or:
 
-    * The @lens@ library, importing @Control.Lens@ (for 'Control.Lens.view' \/
-      ('Control.Lens.^.'), 'Control.Lens.over' and 'Control.Lens.zoom')
+    * The @lens@ library, importing @Control.Lens@ (for ('Control.Lens.^.' \/
+      'Control.Lens.view', 'Control.Lens.over' and 'Control.Lens.zoom')
 
     This tutorial uses @Lens.Family@ since it has fewer dependencies and simpler
     types.
@@ -209,7 +209,7 @@ Just (1, 2)
     remainder of the elements.
 
 > outer :: Monad m => Producer Int m (Producer Int m ())
-> outer = view (splitAt 3) (each [1..6])
+> outer = each [1..6] ^. splitAt 3
 
 >>> inner <- runEffect $ for outer (lift . print)
 1
