@@ -116,7 +116,8 @@ skip = do
     Note that 'drawAll' is not an idiomatic use of @pipes-parse@, but I provide
     it for simple testing purposes.  Idiomatic @pipes-parse@ style consumes the
     elements immediately as they are generated instead of loading all elements
-    into memory.
+    into memory.  For example, you can use 'foldAll' or 'foldAllM' for this
+    purpose.
 -}
 drawAll :: Monad m => Parser a m [a]
 drawAll = go id
@@ -250,9 +251,9 @@ foldAllM step begin done = do
 
 type Lens' a b = forall f . (Functor f) => (b -> f b) -> (a -> f a)
 
-{-| 'span' is an improper lens from a 'Producer' to two 'Producer's split using
-    the given predicate, where the outer 'Producer' is the longest consecutive
-    group of elements that satisfy the predicate
+{-| 'span' is an improper lens that splits the 'Producer' into two 'Producer's,
+    where the outer 'Producer' is the longest consecutive group of elements that
+    satisfy the predicate
 -}
 span
     :: Monad m
@@ -272,8 +273,8 @@ span predicate k p0 = fmap join (k (to p0))
                 else return (yield a >> p')
 {-# INLINABLE span #-}
 
-{-| 'splitAt' is an improper lens from a 'Producer' to two 'Producer's split
-    after the given number of elements
+{-| 'splitAt' is an improper lens that splits a 'Producer' into two 'Producer's
+    after a fixed number of elements
 -}
 splitAt
     :: Monad m
@@ -293,8 +294,8 @@ splitAt n0 k p0 = fmap join (k (to n0 p0))
                     to (n - 1) p'
 {-# INLINABLE splitAt #-}
 
-{-| 'groupBy' is an improper lens from a 'Producer' to two 'Producer's split
-    after the first group of elements grouped using the given equality predicate
+{-| 'groupBy' splits a 'Producer' into two 'Producer's after the first group of
+     elements that are equal according to the equality predicate
 -}
 groupBy
     :: Monad m
