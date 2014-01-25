@@ -287,10 +287,6 @@ Just (1, 2)
     sophisticated.  If you are interested in writing your own custom lenses,
     study the implementation of 'splitAt'.
 
-    'FreeT' requires even greater sophistication.  Study how 'groupsBy' works to
-    learn how to use 'FreeT' to introduce boundaries in a stream of 'Producer's.
-    You can then use 'FreeT' to create your own custom splitters.
-
     To learn more about @pipes-parse@, ask questions, or follow development, you
     can subscribe to the @haskell-pipes@ mailing list at:
 
