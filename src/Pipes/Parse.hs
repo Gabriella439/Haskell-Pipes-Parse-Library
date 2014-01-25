@@ -156,9 +156,7 @@ isEndOfInput = do
 
 {-| Fold all input values
 
-@
- 'Control.Foldl.purely' foldAll :: Monad m => 'Control.Foldl.Fold' a b -> Parser a m b
-@
+> Control.Foldl.purely foldAll :: Monad m => Fold a b -> Parser a m b
 -}
 foldAll 
     :: Monad m
@@ -180,9 +178,7 @@ foldAll step begin done = go begin
 
 {-| Fold all input values monadically
 
-@
- 'Control.Foldl.impurely' foldAllM :: Monad m => 'Control.Foldl.FoldM' a m b -> Parser a m b
-@
+> Control.Foldl.impurely foldAllM :: Monad m => FoldM a m b -> Parser a m b
 -}
 foldAllM
     :: Monad m
