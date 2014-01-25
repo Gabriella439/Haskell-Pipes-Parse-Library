@@ -269,7 +269,7 @@ Just (1, 2)
     namely the first two elements:
 
 >>> evalStateT nestExample (each [1..])
-(Nothign,[1,2],Nothing)
+(Nothing,[1,2],Nothing)
 
 -}
 
