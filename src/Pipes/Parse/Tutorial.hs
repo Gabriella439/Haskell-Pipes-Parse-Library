@@ -29,8 +29,6 @@ module Pipes.Parse.Tutorial (
     -- $conclusion
     ) where
 
--- import Lens.Family2
--- import Lens.Family2.State.Strict
 import Pipes
 import Pipes.Parse
 
@@ -60,7 +58,8 @@ import Pipes.Parse
 >      -> Parser b m r
 >      -> Parser a m r
 
-    * Connect 'Producer's to 'Lens.Family2.Lens''es using ('^.') or 'view':
+    * Connect 'Producer's to 'Lens.Family2.Lens''es using ('Lens.Family.^.') or
+      'Lens.Family.view':
 
 > (^.) :: Producer a m x
 >      -> Lens' (Producer a m x) (Producer b m y)
@@ -76,8 +75,8 @@ import Pipes.Parse
     You can obtain the necessary lens utilities from either:
     
     * The @lens-family-core@ library, importing @Lens.Family@ (for
-      ('^.') \/ 'view' and 'over') and @Lens.Family.State.Strict@ (for 'zoom'),
-      or:
+      ('Lens.Family.^.') \/ 'Lens.Family.view' and 'Lens.Family.over') and
+      @Lens.Family.State.Strict@ (for 'zoom'), or:
 
     * The @lens@ library, importing @Control.Lens@ (for ('Control.Lens.^.' \/
       'Control.Lens.view', 'Control.Lens.over' and 'Control.Lens.zoom')
@@ -267,15 +266,15 @@ Just (1, 2)
 >
 > zoom id = id
 
-    Also note that 'view' nesting obeys the following two laws:
+    Also note that 'Lens.Family.view' nesting obeys the following two laws:
 
 > view lens2 . view lens1 = view (lens1 . lens2)
 >
 > view id = id
 
-    Both the 'zoom' and 'view' laws are examples of functor laws, and they
-    ensure that it does not matter whether you prefer to connect lenses to each
-    other or directly to 'Producer's and 'Parser's.
+    Both the 'zoom' and 'Lens.Family.view' laws are examples of functor laws,
+    and they ensure that it does not matter whether you prefer to connect lenses
+    to each other or directly to 'Producer's and 'Parser's.
 
     However, the lenses in this library are improper, meaning that they violate
     certain lens laws.  The first consequence of this is that 'zoom' does not
@@ -376,14 +375,14 @@ Just (1, 2)
 
     Also, lenses simplify things even further.  The reason that 'groups' is a
     lens is because it actually packages both a splitter and joiner into a
-    single package.  We can then use 'over' to handle both the splitting and
-    joining for us:
+    single package.  We can then use 'Lens.Family.over' to handle both the
+    splitting and joining for us:
 
 >>> runEffect $ over groups (takes 3) P.stdinLn >-> P.stdoutLn
 
-    This gives the exact same behavior because 'over' takes care of calling the
-    splitter before applying the transformation, then calling the joiner
-    afterward.
+    This gives the exact same behavior because 'Lens.Family.over' takes care of
+    calling the splitter before applying the transformation, then calling the
+    joiner afterward.
 -}
 
 {- $conclusion
