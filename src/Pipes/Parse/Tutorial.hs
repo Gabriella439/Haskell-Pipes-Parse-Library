@@ -49,7 +49,8 @@ import Pipes.Parse
 > execStateT :: Parser a m r -> Producer a m x -> m (   Producer a m x)
 
 
-    * Connect 'Lens.Family2.Lens''s to 'Parser's using 'zoom'
+    * Connect 'Lens.Family2.Lens''es to 'Parser's using
+      'Lens.Family.State.Strict.zoom'
 
 > zoom :: Lens' (Producer a m x) (Producer b m y)
 >      -> Parser b m r
@@ -62,8 +63,8 @@ import Pipes.Parse
 >      -> Lens' (Producer a m x) (Producer b m y)
 >      -> Producer b m y
 
-    * Connect 'Lens.Family2.Lens''es to 'Lens''es using ('.') (i.e.  function
-      composition):
+    * Connect 'Lens.Family2.Lens''es to 'Lens.Family2.Lens''es using ('.') (i.e.
+      function composition):
 
 > (.) :: Lens' (Producer a m x) (Producer b m y)
 >     -> Lens' (Producer b m y) (Producer c m z)
@@ -73,9 +74,9 @@ import Pipes.Parse
     
     * The @lens-family-core@ library, importing @Lens.Family@ (for
       ('Lens.Family.^.') \/ 'Lens.Family.view' and 'Lens.Family.over') and
-      @Lens.Family.State.Strict@ (for 'zoom'), or:
+      @Lens.Family.State.Strict@ (for 'Lens.Family.State.Strict.zoom'), or:
 
-    * The @lens@ library, importing @Control.Lens@ (for ('Control.Lens.^.' \/
+    * The @lens@ library, importing @Control.Lens@ (for ('Control.Lens.^.') \/
       'Control.Lens.view', 'Control.Lens.over' and 'Control.Lens.zoom')
 
     This tutorial uses @Lens.Family@ since it has fewer dependencies and simpler
@@ -181,9 +182,9 @@ Just (1, 2)
 > drawThree :: Monad m => Parser a m [a]
 > drawThree = zoom (splitAt 3) drawAll
 
-    'zoom' lets you delimit a 'Parser' using a 'Lens.Family2.Lens''.  The above
-    code says to limit 'drawAll' to a subset of the input, in this case the
-    first three elements:
+    'Lens.Family.State.Strict.zoom' lets you delimit a 'Parser' using a
+    'Lens.Family2.Lens''.  The above code says to limit 'drawAll' to a subset of
+    the input, in this case the first three elements:
 
 >>> evalStateT drawThree (each [1..])
 [1,2,3]
@@ -200,38 +201,45 @@ Just (1, 2)
 > view (splitAt 3) :: Producer a m x -> Producer a m (Producer a m x) 
 
     In this context, @(splitAt 3)@ behaves like 'splitAt' from the Prelude,
-    except instead of splitting a list it splits a 'Producer'.  The outer
-    'Producer' contains up to 3 elements and the inner 'Producer' contains the
-    remainder of the elements.
+    except instead of splitting a list it splits a 'Producer'.  Here's an
+    example of how this works:
 
 > outer :: Monad m => Producer Int m (Producer Int m ())
 > outer = each [1..6] ^. splitAt 3
 
+    In the above example the outer 'Producer' layer will contain the first three
+    elements and the inner 'Producer' will contain the remaining elements:
+
+>>> -- Print all the elements in the outer layer and return the inner layer
 >>> inner <- runEffect $ for outer (lift . print)
 1
 2
 3
+>>> -- Now print the elements in the inner layer
 >>> runEffect $ for inner (lift . print)
 4
 5
 6
 
-    The above definition of @outer@ is equivalent to:
+    The above definition of @outer@ is exactly equivalent to:
 
 > outer = do
 >     each [1..3]
 >     return (each [4..6])
 
-    'zoom' takes our lens a step further and uses it to limit our parser to the
-    outer 'Producer' (the first three elements).  When the parser is done 'zoom'
-    also returns unused elements back to the original stream.  We can
-    demonstrate this using the following example parser:
+    'Lens.Family.State.Strict.zoom' takes our lens a step further and uses it to
+    limit our parser to the outer 'Producer' (the first three elements).  When
+    the parser is done 'Lens.Family.State.Strict.zoom' also returns unused
+    elements back to the original stream.  We can demonstrate this using the
+    following example parser:
 
 > splitExample :: Monad m => Parser a m (Maybe a, [a])
 > splitExample = do
 >     x <- zoom (splitAt 3) draw
 >     y <- zoom (splitAt 3) drawAll
 >     return (x, y)
+
+    The second parser begins where the first parser left off:
 
 >>> evalStateT splitExample (each [1..])
 (Just 1,[2,3,4])
@@ -246,13 +254,19 @@ Just (1, 2)
 >     z <- zoom (span (>= 4)) draw
 >     return (x, y, z)
 
+    Note that even if the first parser fails, subsequent parsers can still
+    succeed because they operate under a different lens:
+
 >>> evalStateT spanExample (each [1..])
 (Nothing,[1,2,3],Just 4)
 
-    You can even nest 'zoom's, too:
+    You can even nest 'Lens.Family.State.Strict.zoom's, too:
 
 > nestExample :: Monad m => Parser Int m (Maybe Int, [Int], Maybe Int)
 > nestExample = zoom (splitAt 2) spanExample
+
+    All the parsers from @spanExample@ now only see a subset of the input,
+    namely the first two elements:
 
 >>> evalStateT nestExample (each [1..])
 (Nothign,[1,2],Nothing)
