@@ -16,14 +16,12 @@ Description: @pipes-parse@ builds upon the @pipes@ library to provide shared
     .
     * /Leftover propagation/: Leftovers are propagated backwards perfectly
     .
-    * /Perfect Streaming/: Program in a list-like style in constant memory
-    .
     * /Connect and Resume/: Use @StateT@ to save unused input for later
     .
     * /Termination Safety/: Detect and recover from end of input
     .
     @Pipes.Parse@ contains the full documentation for this library.
-
+    . 
     Read @Pipes.Parse.Tutorial@ for an extensive tutorial.
 Category: Control, Pipes, Parsing
 Source-Repository head
