@@ -99,14 +99,15 @@ import Pipes.Parse
     'Parser' written using 'draw' that retrieves the first two elements from a
     stream:
 
-> import Control.Applicative (liftA2)
 > import Pipes.Parse
 >
-> drawTwo :: Monad m => Parser a m (Maybe (a, a))
+> drawTwo :: Monad m => Parser a m (Maybe a, Maybe a)
 > drawTwo = do
 >     mx <- draw
 >     my <- draw
->     return (liftA2 (,) mx my)
+>     return (mx, my)
+>
+> -- or: drawTwo = liftM2 (,) draw draw
 
     Since a 'Parser' is just a 'StateT' action, you run a 'Parser' using the
     same run functions as 'StateT':
@@ -126,24 +127,24 @@ import Pipes.Parse
 >>> evalStateT drawTwo Pipes.Prelude.stdinLn
 Pink<Enter>
 Elephants<Enter>
-Just ("Pink","Elephants")
+(Just "Pink",Just "Elephants")
 
-    The result is wrapped in a 'Maybe' because our 'Producer' might have less
-    than two elements:
+    The result is wrapped in a 'Maybe' because 'draw' can fail if the 'Producer'
+    is empty:
 
 >>> evalStateT drawTwo (yield 0)
-Nothing
+(Just 0,Nothing)
 
-    If either of our two 'draw's fails and returns a 'Nothing', the combined
-    result will be a 'Nothing'.
-
-    We can use 'runStateT' or 'execStateT' to retrieve unused elements after
-    parsing:
+    Parsing might not necessarily consume the entire stream.  We can use
+    'runStateT' or 'execStateT' to retrieve unused elements that our parser does
+    not consume:
 
 >>> import Pipes
 >>> (result, unused) <- runStateT drawTwo (each [1..4])
->>> print result
-Just (1, 2)
+>>> -- View the parsed result
+>>> result
+(Just 1,Just 2)
+>>> -- Now print the leftovers
 >>> runEffect $ for unused (lift . print)
 3
 4
@@ -164,13 +165,24 @@ Just (1, 2)
 [1,2,3,4,5,6,7,8,9,10]
 
     However, this function is not recommended in general because it loads the
-    entire input into memory, which defeats the purpose of streaming parsing:
+    entire input into memory, which defeats the purpose of streaming parsing.
 
->>> evalStateT drawAll (each [1..])
-<Does not terminate>
+    You can instead use 'foldAll' if you wish to fold all input elements into a
+    single result:
 
-    But what if you wanted to draw just the first three elements from an
-    infinite stream?  This is what lenses are for:
+>>> evalStateT (foldAll (+) 0 id) (each [1..10])
+55
+
+    You can also use the @foldl@ package to simplify writing more complex folds:
+
+>>> import Control.Applicative
+>>> import Control.Foldl as L
+>>> evalStateT (purely foldAll (liftA2 (,) L.sum L.maximum)) (each [1..10])
+(55,Just 10)
+
+    But what if you wanted to draw or fold just the first three elements from
+    an infinite stream instead of the entire input?  This is what lenses are
+    for:
 
 > import Lens.Family
 > import Lens.Family.State.Strict
@@ -202,13 +214,19 @@ Just (1, 2)
 
     In this context, @(splitAt 3)@ behaves like 'splitAt' from the Prelude,
     except instead of splitting a list it splits a 'Producer'.  Here's an
-    example of how this works:
+    example of how you can use 'splitAt':
 
 > outer :: Monad m => Producer Int m (Producer Int m ())
 > outer = each [1..6] ^. splitAt 3
 
-    In the above example the outer 'Producer' layer will contain the first three
-    elements and the inner 'Producer' will contain the remaining elements:
+    The above definition of @outer@ is exactly equivalent to:
+
+> outer = do
+>     each [1..3]
+>     return (each [4..6])
+
+    We can prove this by successively running the outer and inner 'Producer'
+    layers:
 
 >>> -- Print all the elements in the outer layer and return the inner layer
 >>> inner <- runEffect $ for outer (lift . print)
@@ -221,28 +239,25 @@ Just (1, 2)
 5
 6
 
-    The above definition of @outer@ is exactly equivalent to:
+    We can also uses lenses to modify 'Parser's, using
+    'Lens.Family.State.Strict.zoom'.  When we combine
+    'Lens.Family.State.Strict.zoom' with @(splitAt 3)@ we limit a parser to the
+    the first three elements of the stream.  When the parser is done
+    'Lens.Family.State.Strict.zoom' also returns unused elements back to the
+    original stream.  We can demonstrate this using the following example
+    parser:
 
-> outer = do
->     each [1..3]
->     return (each [4..6])
-
-    'Lens.Family.State.Strict.zoom' takes our lens a step further and uses it to
-    limit our parser to the outer 'Producer' (the first three elements).  When
-    the parser is done 'Lens.Family.State.Strict.zoom' also returns unused
-    elements back to the original stream.  We can demonstrate this using the
-    following example parser:
-
-> splitExample :: Monad m => Parser a m (Maybe a, [a])
+> splitExample :: Monad m => Parser a m ([a], Maybe a, [a])
 > splitExample = do
->     x <- zoom (splitAt 3) draw
->     y <- zoom (splitAt 3) drawAll
->     return (x, y)
+>     x <- zoom (splitAt 3) drawAll
+>     y <- zoom (splitAt 3) draw
+>     z <- zoom (splitAt 3) drawAll
+>     return (x, y, z)
 
     The second parser begins where the first parser left off:
 
 >>> evalStateT splitExample (each [1..])
-(Just 1,[2,3,4])
+([1,2,3],Just 4,[5,6,7])
 
     'span' behaves the same way, except that it uses a predicate and takes as
     many consecutive elements as possible that satisfy the predicate:
@@ -280,12 +295,23 @@ Just (1, 2)
 
     This library is very minimal and only contains datatype-agnostic parsing
     utilities, so this tutorial does not explore the full range of parsing
-    tricks using lenses.  See @pipes-bytestring@ and @pipes-text@ for more
-    powerful examples of lens-based parsing.
+    tricks using lenses.  For example, you can also use lenses to change the
+    element type.  Several downstream libraries provide more specific
+    functionality, including:
+
+    * @pipes-binary@: Lenses and parsers for @binary@ values
+
+    * @pipes-attoparsec@: Converts @attoparsec@ parsers to @pipes@ parsers
+
+    * @pipes-aeson@: Lenses and parsers for JSON values
+
+    * @pipes-bytestring@: Lenses and parsers for byte streams
+
+    * @pipes-text@: Lenses and parsers for text encodings
 
     'Parser's are very straightforward to write, but lenses are more
     sophisticated.  If you are interested in writing your own custom lenses,
-    study the implementation of 'splitAt'.
+    study the implementation of existing lenses like 'splitAt'.
 
     To learn more about @pipes-parse@, ask questions, or follow development, you
     can subscribe to the @haskell-pipes@ mailing list at:
