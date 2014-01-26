@@ -28,14 +28,12 @@ module Pipes.Parse (
 
     -- * Re-exports
     -- $reexports
-    module Control.Monad.IO.Class,
     module Control.Monad.Trans.Class,
     module Control.Monad.Trans.State.Strict,
     module Pipes
     ) where
 
 import Control.Monad (join)
-import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.Class (lift)
 import qualified Control.Monad.Trans.State.Strict as S
 import Control.Monad.Trans.State.Strict (
@@ -297,8 +295,6 @@ group = groupBy (==)
 {-# INLINABLE group #-}
 
 {- $reexports
-    "Control.Monad.IO.Class" re-exports 'liftIO'.
-
     "Control.Monad.Trans.Class" re-exports 'lift'.
 
     "Control.Monad.Trans.State.Strict" re-exports 'StateT', 'runStateT',
