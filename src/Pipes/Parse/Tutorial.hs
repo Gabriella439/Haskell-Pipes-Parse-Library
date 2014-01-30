@@ -22,6 +22,9 @@ module Pipes.Parse.Tutorial (
     -- * Lenses
     -- $lenses
 
+    -- * Getters
+    -- $getters
+
     -- * Conclusion
     -- $conclusion
     ) where
@@ -286,6 +289,37 @@ Elephants<Enter>
 >>> evalStateT nestExample (each [1..])
 (Nothing,[1,2],Nothing)
 
+-}
+
+{- $getters
+    Not all transformations are reversible.  For example, consider the following
+    contrived function:
+
+> import Pipes
+> import qualified Pipes.Prelude as P
+>
+> map' :: Monad m => (a -> b) -> Producer a m r -> Producer b m r
+> map' f p = p >-> P.map f
+
+    Given a function of type @(a -> b)@, we can transform a stream of @a@'s into
+    a stream of @b@'s, but not the other way around.  Transformations which are
+    not reversible and cannot be modeled as 'Pipe's can only be modeled as
+    functions between 'Producer's.  However, 'Pipe's are preferable to functions
+    between 'Producer's when possible because 'Pipe's can transform both
+    'Producer's and 'Consumer's.
+
+    You can use lens-like syntax for functions between 'Producer's by promoting
+    them to @Getter@s using 'Lens.Family.to':
+
+> import Lens.Family
+>
+> example :: Monad m => Producer Int m ()
+> example = each [1..3] ^. to (map' (*2))
+
+    However, a function of 'Producer's (or the equivalent @Getter@) cannot be
+    used transform 'Parser's (using 'Lens.Family.State.Strict.zoom' or
+    otherwise) .  This reflects the fact that such a transformation cannot be
+    applied in reversed.
 -}
 
 {- $conclusion
