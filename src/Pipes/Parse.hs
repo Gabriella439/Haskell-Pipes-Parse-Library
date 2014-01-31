@@ -8,29 +8,33 @@
 module Pipes.Parse (
     -- * Parsing
     -- $parsing
-    Parser,
-    draw,
-    skip,
-    drawAll,
-    skipAll,
-    unDraw,
-    peek,
-    isEndOfInput,
-    foldAll,
-    foldAllM,
+      Parser
+    , draw
+    , skip
+    , drawAll
+    , skipAll
+    , unDraw
+    , peek
+    , isEndOfInput
+    , foldAll
+    , foldAllM
 
     -- * Parsing Lenses
     -- $parsinglenses
-    span,
-    splitAt,
-    groupBy,
-    group,
+    , span
+    , splitAt
+    , groupBy
+    , group
+
+    -- * Utilities
+    , toParser
+    , toParser_
 
     -- * Re-exports
     -- $reexports
-    module Control.Monad.Trans.Class,
-    module Control.Monad.Trans.State.Strict,
-    module Pipes
+    , module Control.Monad.Trans.Class
+    , module Control.Monad.Trans.State.Strict
+    , module Pipes
     ) where
 
 import Control.Monad (join)
@@ -39,7 +43,9 @@ import qualified Control.Monad.Trans.State.Strict as S
 import Control.Monad.Trans.State.Strict (
     StateT(StateT, runStateT), evalStateT, execStateT )
 import Data.Functor.Constant (Constant(Constant, getConstant))
+import Pipes.Internal (unsafeHoist, closed)
 import Pipes (Producer, yield, next)
+import Pipes as NoReexport
 
 import Prelude hiding (span, splitAt)
 
@@ -293,6 +299,21 @@ group
     :: (Monad m, Eq a) => Lens' (Producer a m x) (Producer a m (Producer a m x))
 group = groupBy (==)
 {-# INLINABLE group #-}
+
+{-| Convert a 'Consumer' to a 'Parser'
+
+    'Nothing' signifies end of input
+-}
+toParser :: Monad m => Consumer (Maybe a) m r -> Parser a m r
+toParser consumer = runEffect (lift draw >~ unsafeHoist lift consumer)
+{-# INLINABLE toParser #-}
+
+-- | Convert a never-ending 'Consumer' to a 'Parser'
+toParser_ :: Monad m => Consumer a m X -> Parser a m ()
+toParser_ consumer = StateT $ \producer -> do
+    r <- runEffect (producer >-> fmap closed consumer)
+    return ((), return r)
+{-# INLINABLE toParser_ #-}
 
 {- $reexports
     "Control.Monad.Trans.Class" re-exports 'lift'.
