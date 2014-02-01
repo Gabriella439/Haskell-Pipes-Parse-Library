@@ -25,6 +25,9 @@ module Pipes.Parse.Tutorial (
     -- * Getters
     -- $getters
 
+    -- * Building Lenses
+    -- $buildlenses
+
     -- * Conclusion
     -- $conclusion
     ) where
@@ -308,8 +311,8 @@ Elephants<Enter>
     between 'Producer's when possible because 'Pipe's can transform both
     'Producer's and 'Consumer's.
 
-    You can use lens-like syntax for functions between 'Producer's by promoting
-    them to @Getter@s using 'Lens.Family.to':
+    If you prefer, you can use lens-like syntax for functions between
+    'Producer's by promoting them to @Getter@s using 'Lens.Family.to':
 
 > import Lens.Family
 >
@@ -322,6 +325,50 @@ Elephants<Enter>
     applied in reversed.
 -}
 
+{- $buildlenses
+    Lenses are very easy to write if you are willing to depend on either the
+    @lens-family@ or @lens@ library.  Both of these libraries provide an
+    'Lens.Family2.Unchecked.iso' function that you can use to assemble your own
+    lenses.  You only need two functions which reversibly transform back and
+    forth between a stream of @a@s and a stream of @b@s:
+
+> -- "Forward"
+> fw :: Producer a m x -> Producer b m y
+>
+> -- "Backward"
+> bw :: Producer b m y -> Producer a m x
+
+    ... such that:
+
+> fw . bw = id
+>
+> bw . fw = id
+
+    You can then convert them to a 'Lens.Family2.Lens'' using
+    'Lens.Family2.Unchecked.iso':
+
+> import Lens.Family2 (Lens')
+> import Lens.Family2.Unchecked (iso)
+>
+> lens :: Lens' (Producer a m x) (Producer b m y)
+> lens = iso fw bw
+
+    You can even do this without incurring any dependencies if you rewrite the
+    above code like this:
+
+> -- This type synonym requires the 'RankNTypes' extension
+> type Lens' a b = forall f . Functor f => (b -> f b) -> (a -> f a)
+>
+> lens :: Lens' (Producer a m x) (Producer b m y)
+> lens k p = fmap bw (k (fw p))
+
+    This is what @pipes-parse@ does internally, and you will find several
+    examples of this pattern in the source code of the "Pipes.Parse" module.
+
+    Lenses defined using either approach will work with both the @lens@ and
+    @lens-family@ libraries.
+-}
+
 {- $conclusion
     @pipes-parse@ introduces core idioms for @pipes@-based parsing.  These
     idioms reuse 'Producer's, but introduce two new abstractions:
@@ -330,8 +377,9 @@ Elephants<Enter>
     This library is very minimal and only contains datatype-agnostic parsing
     utilities, so this tutorial does not explore the full range of parsing
     tricks using lenses.  For example, you can also use lenses to change the
-    element type.  Several downstream libraries provide more specific
-    functionality, including:
+    element type.
+
+    Several downstream libraries provide more specific functionality, including:
 
     * @pipes-binary@: Lenses and parsers for @binary@ values
 
@@ -342,10 +390,6 @@ Elephants<Enter>
     * @pipes-bytestring@: Lenses and parsers for byte streams
 
     * @pipes-text@: Lenses and parsers for text encodings
-
-    'Parser's are very straightforward to write, but lenses are more
-    sophisticated.  If you are interested in writing your own custom lenses,
-    study the implementation of existing lenses like 'splitAt'.
 
     To learn more about @pipes-parse@, ask questions, or follow development, you
     can subscribe to the @haskell-pipes@ mailing list at:
