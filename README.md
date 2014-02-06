@@ -8,40 +8,27 @@ provide shared streaming parsing utilities.
 
 * Install the [Haskell Platform](http://www.haskell.org/platform/)
 * `cabal install pipes-parse`
+* `cabal install lens-family-core`
 
 Then fire up `ghci`:
 
     Prelude> import Pipes
-    Prelude Pipes> import qualified Pipes.Prelude as P
-    Prelude Pipes P> import qualified Pipes.Parse as P
+    Prelude Pipes> import Pipes.Parse as Parse
+    Prelude Pipes Parse> import Lens.Family.State.Strict as Lens
 
-... and limit standard input to first three consecutive groups of equal lines:
+... and draw the first group of consecutive equal elements:
 
-    Prelude Pipes P P> let threeGroups = P.concat . P.takeFree 3 . P.groupBy (==)
-    Prelude Pipes P P> runEffect $ threeGroups P.stdinLn >-> P.stdoutLn
-    Group1<Enter>
-    Group1
-    Group1<Enter>
-    Group1
-    Group2<Enter>
-    Group2
-    Group3<Enter>
-    Group3
-    Group3<Enter>
-    Group3
-    Group4<Enter>
-    Prelude Pipes P P> -- Done, because we began entering our fourth group
+    Prelude Pipes Parse Lens> evalStateT (zoom group drawAll) (each [1, 1, 2, 3]
+    [1,1]
 
 The official tutorial is on
 [Hackage](http://hackage.haskell.org/package/pipes-parse).
 
 ## Features
 
-* *Perfect Streaming*: Program in a list-like style in constant memory
-
-* *Concise Parsing API*: Just use `draw` and `unDraw` or `input`
-
 * *Leftovers*: Save unused input for later consumption
+
+* *Leftover propagation*: Leftovers are propagated backwards perfectly
 
 * *Connect and Resume*: Use `StateT` to save unused input for later
 
@@ -49,19 +36,16 @@ The official tutorial is on
 
 ## Outline
 
-`pipes-parse` provides generic examples for how to parse streams using `pipes`.
-Datatype-specific parsers belong in separate libraries.  The purpose behind
-this library is to provide example idioms that other libraries can reuse,
-as well as providing useful tools for generic stream parsing.  Typically,
-stream-specific parsing libraries will need to redefine specialized versions of
-the primitives in this library and will probably not need to depend on
-`pipes-parse` at all.
+`pipes-parse` provides the core idioms for how to parse streams using `pipes`.
+Stream-specific parsers are provided in downstream libraries, such as
+`pipes-bytestring` and `pipes-text`.
 
 ## Development Status
 
-`pipes-parse` is close to complete and will probably add a few more functions
-over the new few months.  If the API does not make any backwards incompatible
-changes by the end of 2013 then the library will be officially stabilized.
+The core mechanism behind `pipes-parse` is stable.  I may accept requests for
+additional generic parsers, but the central idioms will not change.  Most
+development work concentrates on downstream libraries to provide stream-specific
+parsing utilities.
 
 ## Community Resources
 
