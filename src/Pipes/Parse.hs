@@ -29,6 +29,8 @@ module Pipes.Parse (
     -- * Utilities
     , toParser
     , toParser_
+    , mapIso
+    , pipeIso
 
     -- * Re-exports
     -- $reexports
@@ -43,9 +45,13 @@ import qualified Control.Monad.Trans.State.Strict as S
 import Control.Monad.Trans.State.Strict (
     StateT(StateT, runStateT), evalStateT, execStateT )
 import Data.Functor.Constant (Constant(Constant, getConstant))
+import Data.Functor.Identity (Identity(Identity, runIdentity))
+import Data.Profunctor (Profunctor)
+import qualified Data.Profunctor as DP
 import Pipes.Internal (unsafeHoist, closed)
 import Pipes (Producer, yield, next)
 import Pipes as NoReexport
+import qualified Pipes.Prelude as P
 
 import Prelude hiding (span, splitAt)
 
@@ -230,6 +236,7 @@ foldAllM step begin done = do
 -}
 
 type Lens' a b = forall f . (Functor f) => (b -> f b) -> (a -> f a)
+type Iso s t a b = forall f p . (Functor f, Profunctor p) => p a (f b) -> p s (f t)
 
 {-| 'span' is an improper lens that splits the 'Producer' into two 'Producer's,
     where the outer 'Producer' is the longest consecutive group of elements that
@@ -314,6 +321,24 @@ toParser_ consumer = StateT $ \producer -> do
     r <- runEffect (producer >-> fmap closed consumer)
     return ((), return r)
 {-# INLINABLE toParser_ #-}
+
+data Exchange a b s t = Exchange (s -> a) (b -> t)
+instance Profunctor (Exchange a b) where
+    dimap f g (Exchange sa bt) = Exchange (sa . f) (g . bt)
+
+-- | Convert isomorphism types
+mapIso :: ((a -> b) -> c -> d) -> Iso a b b a -> Iso c d d c
+mapIso f i = DP.dimap (f sa) (fmap (f $ runIdentity . bt)) where
+    Exchange sa bt = i $ Exchange id Identity
+{-# INLINABLE mapIso #-}
+
+-- | Upgrade an isomorphism to work with 'Producer's
+pipeIso
+    :: Monad m
+    => Iso a b b a
+    -> Iso (Proxy x' x () a m r) (Proxy x' x () b m r) (Proxy x' x () b m r) (Proxy x' x () a m r)
+pipeIso = mapIso $ (<-<) . P.map
+{-# INLINABLE pipeIso #-}
 
 {- $reexports
     "Control.Monad.Trans.Class" re-exports 'lift'.
