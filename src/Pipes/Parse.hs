@@ -43,6 +43,7 @@ import qualified Control.Monad.Trans.State.Strict as S
 import Control.Monad.Trans.State.Strict (
     StateT(StateT, runStateT), evalStateT, execStateT )
 import Data.Functor.Constant (Constant(Constant, getConstant))
+import Data.Foldable (forM_)
 import Pipes.Internal (unsafeHoist, closed)
 import Pipes (Producer, yield, next)
 import Pipes as NoReexport
@@ -142,9 +143,7 @@ unDraw a = S.modify (yield a >>)
 peek :: Monad m => Parser a m (Maybe a)
 peek = do
     x <- draw
-    case x of
-        Nothing -> return ()
-        Just a  -> unDraw a
+    forM_ x unDraw
     return x
 {-# INLINABLE peek #-}
 
@@ -164,7 +163,7 @@ isEndOfInput = do
 
 > Control.Foldl.purely foldAll :: Monad m => Fold a b -> Parser a m b
 -}
-foldAll 
+foldAll
     :: Monad m
     => (x -> a -> x)
     -- ^ Step function
@@ -229,7 +228,7 @@ foldAllM step begin done = do
 >     -> Lens' (Producer a m y) (Producer c m z)
 -}
 
-type Lens' a b = forall f . (Functor f) => (b -> f b) -> (a -> f a)
+type Lens' a b = forall f . (Functor f) => (b -> f b) -> a -> f a
 
 {-| 'span' is an improper lens that splits the 'Producer' into two 'Producer's,
     where the outer 'Producer' is the longest consecutive group of elements that
@@ -246,7 +245,7 @@ span predicate k p0 = fmap join (k (to p0))
         case x of
             Left   r      -> return (return r)
             Right (a, p') ->
-                if (predicate a)
+                if predicate a
                 then do
                     yield a
                     to p'
@@ -263,7 +262,7 @@ splitAt n0 k p0 = fmap join (k (to n0 p0))
   where
 --  to :: Monad m => Int -> Producer a m x -> Producer a m (Producer a m x)
     to n p =
-        if (n <= 0)
+        if n <= 0
         then return p
         else do
             x <- lift (next p)
@@ -274,7 +273,7 @@ splitAt n0 k p0 = fmap join (k (to n0 p0))
                     to (n - 1) p'
 {-# INLINABLE splitAt #-}
 
-(^.) :: a -> ((b -> Constant b b) -> (a -> Constant b a)) -> b
+(^.) :: a -> ((b -> Constant b b) -> a -> Constant b a) -> b
 a ^. lens = getConstant (lens Constant a)
 
 {-| 'groupBy' splits a 'Producer' into two 'Producer's after the first group of
