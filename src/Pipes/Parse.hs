@@ -29,6 +29,7 @@ module Pipes.Parse (
     -- * Utilities
     , toParser
     , toParser_
+    , atEndOfInput
 
     -- * Re-exports
     -- $reexports
@@ -314,6 +315,22 @@ toParser_ consumer = StateT $ \producer -> do
     return ((), return r)
 {-# INLINABLE toParser_ #-}
 
+{- | Returns @'Just' r@ if the producer has reached end of input, otherwise
+     'Nothing'.
+-}
+atEndOfInput :: Monad m => StateT (Producer a m r) m (Maybe r)
+atEndOfInput = do
+    p0 <- S.get
+    x <- lift (next p0)
+    case x of
+        Left r -> do
+            S.put (return r)
+            return (Just r)
+        Right (a,p1) -> do
+            S.put (yield a >> p1)
+            return Nothing
+{-# INLINABLE atEndOfInput #-}
+
 {- $reexports
     "Control.Monad.Trans.Class" re-exports 'lift'.
 
@@ -322,3 +339,4 @@ toParser_ consumer = StateT $ \producer -> do
 
     "Pipes" re-exports 'Producer', 'yield', and 'next'.
 -}
+
