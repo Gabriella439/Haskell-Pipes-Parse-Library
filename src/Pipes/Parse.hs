@@ -29,6 +29,7 @@ module Pipes.Parse (
     -- * Utilities
     , toParser
     , toParser_
+    , parseForever
 
     -- * Re-exports
     -- $reexports
@@ -37,7 +38,7 @@ module Pipes.Parse (
     , module Pipes
     ) where
 
-import Control.Monad (join)
+import Control.Monad (join, forever)
 import Control.Monad.Trans.Class (lift)
 import qualified Control.Monad.Trans.State.Strict as S
 import Control.Monad.Trans.State.Strict (
@@ -313,6 +314,16 @@ toParser_ consumer = StateT $ \producer -> do
     r <- runEffect (producer >-> fmap closed consumer)
     return ((), return r)
 {-# INLINABLE toParser_ #-}
+
+
+-- | Convert a 'Parser' to a 'Pipe' by running it repeatedly on the input
+parseForever ::
+  Monad m =>
+  (forall n. Monad n => Parser a n (Either r b)) ->
+  Pipe a b m r
+parseForever parse = go (forever (lift await >>= yield))
+  where go prod = do (b, prod') <- runStateT parse prod
+                     either return ((>> go prod') . yield) b
 
 {- $reexports
     "Control.Monad.Trans.Class" re-exports 'lift'.
