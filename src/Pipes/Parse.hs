@@ -30,6 +30,7 @@ module Pipes.Parse (
     , toParser
     , toParser_
     , parseForever
+    , parseForever_
 
     -- * Re-exports
     -- $reexports
@@ -38,7 +39,7 @@ module Pipes.Parse (
     , module Pipes
     ) where
 
-import Control.Monad (join, forever)
+import Control.Monad (join, forever, liftM)
 import Control.Monad.Trans.Class (lift)
 import qualified Control.Monad.Trans.State.Strict as S
 import Control.Monad.Trans.State.Strict (
@@ -324,6 +325,14 @@ parseForever ::
 parseForever parse = go (forever (lift await >>= yield))
   where go prod = do (b, prod') <- runStateT parse prod
                      either return ((>> go prod') . yield) b
+
+-- | Variant of `parseForever` for parsers which return a Maybe
+-- instead of an Either
+parseForever_ ::
+  Monad m =>
+  (forall n. Monad n => Parser a n (Maybe b)) ->
+  Pipe a b m ()
+parseForever_ parse = parseForever (liftM (maybe (Left ()) Right) parse)
 
 {- $reexports
     "Control.Monad.Trans.Class" re-exports 'lift'.
