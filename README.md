@@ -18,7 +18,7 @@ Then fire up `ghci`:
 
 ... and draw the first group of consecutive equal elements:
 
-    Prelude Pipes Parse Lens> evalStateT (zoom group drawAll) (each [1, 1, 2, 3]
+    Prelude Pipes Parse Lens> evalStateT (zoom group drawAll) (each [1, 1, 2, 3])
     [1,1]
 
 The official tutorial is on
