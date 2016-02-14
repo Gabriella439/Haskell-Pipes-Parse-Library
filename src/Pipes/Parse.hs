@@ -29,6 +29,8 @@ module Pipes.Parse (
     -- * Utilities
     , toParser
     , toParser_
+    , parsed
+    , parsed_
     , parseForever
     , parseForever_
 
@@ -317,6 +319,45 @@ toParser_ consumer = StateT $ \producer -> do
 {-# INLINABLE toParser_ #-}
 
 
+{-| Run a `Parser` repeatedly on a `Producer`, `yield`ing each `Right result
+
+    Returns the remainder of the `Producer` when the `Parser` returns `Left`
+-}
+parsed
+    :: Monad m
+    => Parser a m (Either e b)
+    -> Producer a m r -> Producer b m (e, Producer a m r)
+parsed parser = go
+  where
+    go p = do
+        (x, p') <- lift (runStateT parser p)
+        case x of
+            Left  r -> return (r, p')
+            Right b -> do
+                yield b
+                go p'
+{-# INLINABLE parsed #-}
+
+{-| Run a `Parser` repeatedly on a `Producer`, `yield`ing each `Just` result
+
+    Returns the remainder of the `Producer` when the `Parser` returns `Just`
+-}
+parsed_
+    :: Monad m
+    => Parser a m (Maybe b)
+    -> Producer a m r
+    -> Producer b m (Producer a m r)
+parsed_ parser p = do
+    ((), p') <- parsed parser' p
+    return p'
+  where
+    parser' = do
+        x <- parser
+        return (case x of
+            Nothing -> Left ()
+            Just b  -> Right b )
+{-# INLINABLE parsed_ #-}
+
 -- | Convert a 'Parser' to a 'Pipe' by running it repeatedly on the input
 parseForever ::
   Monad m =>
@@ -325,6 +366,7 @@ parseForever ::
 parseForever parse = go (forever (lift await >>= yield))
   where go prod = do (b, prod') <- runStateT parse prod
                      either return ((>> go prod') . yield) b
+{-# DEPRECATED parseForever "Use `parsed` instead" #-}
 
 -- | Variant of `parseForever` for parsers which return a Maybe
 -- instead of an Either
@@ -333,6 +375,7 @@ parseForever_ ::
   (forall n. Monad n => Parser a n (Maybe b)) ->
   Pipe a b m ()
 parseForever_ parse = parseForever (liftM (maybe (Left ()) Right) parse)
+{-# DEPRECATED parseForever_ "Use `parsed_` instead" #-}
 
 {- $reexports
     "Control.Monad.Trans.Class" re-exports 'lift'.
