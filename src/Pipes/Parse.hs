@@ -340,7 +340,7 @@ parsed parser = go
 
 {-| Run a `Parser` repeatedly on a `Producer`, `yield`ing each `Just` result
 
-    Returns the remainder of the `Producer` when the `Parser` returns `Just`
+    Returns the remainder of the `Producer` when the `Parser` returns `Nothing`
 -}
 parsed_
     :: Monad m
