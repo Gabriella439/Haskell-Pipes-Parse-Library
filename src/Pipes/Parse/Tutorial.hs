@@ -367,6 +367,41 @@ Elephants<Enter>
 
     Lenses defined using either approach will work with both the @lens@ and
     @lens-family@ libraries.
+
+    You can even use `Parser`s to build a function between `Producer`s.  For
+    example, a very common idiom is to define a function of type:
+
+> example :: Monad m => Producer a m r -> Producer b m (Producer a m r)
+
+    ... which parses as many @\'b\'@s as possible from the input stream of
+    @\'a\'@s, returning the remainder of the stream if parsing fails.
+
+    You can define that in terms of a parser of type:
+
+> parser :: Monad m => StateT (Producer a m x) (Producer b m) r
+>
+> example = execStateT parser
+
+    However, writing a parser of that type requires a few changes for
+    everything to type-check.  For example, the `draw` function does not have
+    the correct type for the above @parser@:
+
+> draw :: StateT (Producer a m x) m (Maybe a)
+
+    ... but @(hoist lift draw)@ does have the correct type, where `Pipes.hoist`
+    comes from the @mmorph@ library and is re-exported by @pipes@:
+
+> hoist lift draw :: StateT (Producer a m x) (Producer b m) (Maybe a)
+
+    Similarly, `yield` does not have the right type when you want to emit an
+    element of type @\'b\'@:
+
+> yield :: Monad m => b -> Producer b m ()
+
+    ... but @(lift . yield)@ does have the right type:
+
+> lift . yield :: Monad m => b -> StateT (Producer a m x) (Producer b m) ()
+
 -}
 
 {- $conclusion
