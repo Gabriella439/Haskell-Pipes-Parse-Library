@@ -245,7 +245,7 @@ Elephants<Enter>
 5
 6
 
-    We can also uses lenses to modify 'Parser's, using
+    We can also use lenses to modify 'Parser's, using
     'Lens.Family.State.Strict.zoom'.  When we combine
     'Lens.Family.State.Strict.zoom' with @(splitAt 3)@ we limit a parser to the
     the first three elements of the stream.  When the parser is done
