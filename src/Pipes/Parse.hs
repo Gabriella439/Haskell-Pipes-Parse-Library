@@ -147,7 +147,7 @@ unDraw a = S.modify (yield a >>)
 peek :: Monad m => Parser a m (Maybe a)
 peek = do
     x <- draw
-    forM_ x unDraw
+    forM_ x $ \a -> unDraw a
     return x
 {-# INLINABLE peek #-}
 
