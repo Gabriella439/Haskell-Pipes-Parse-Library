@@ -33,7 +33,7 @@ Library
     Build-Depends:
         base         >= 4       && < 5  ,
         pipes        >= 4.1     && < 4.4,
-        transformers >= 0.2.0.0 && < 0.6
+        transformers >= 0.2.0.0 && < 0.7
     Exposed-Modules:
         Pipes.Parse,
         Pipes.Parse.Tutorial
